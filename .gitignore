@@ -1,0 +1,19 @@
+# 构建产物
+bin/
+obj/
+publish/
+publish-standard/
+dist/
+artifacts/
+.tools/
+
+# IDE 与本地用户配置
+.vs/
+.idea/
+*.user
+
+# 本地运行数据与日志
+data/
+reports/
+*.log
+*.pdb
