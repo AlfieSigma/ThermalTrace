@@ -1,0 +1,6 @@
+# 行尾策略：仓库内一律 LF，检出到工作区时由 Git 统一处理。
+* text=auto eol=lf
+
+# .cmd / .bat 必须是 CRLF，否则双击执行会出现空白行丢失、命令解析异常。
+*.cmd text eol=crlf
+*.bat text eol=crlf

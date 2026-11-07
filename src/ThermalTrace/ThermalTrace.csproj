@@ -1,0 +1,134 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>12</LangVersion>
+    <PlatformTarget>x64</PlatformTarget>
+    <!--
+      只声明"允许为 win-x64 还原"，不设 RuntimeIdentifier：日常构建输出仍是与机器架构无关的
+      多文件目录，发布时由脚本传 -r win-x64。这样 packages.lock.json 始终包含
+      net8.0-windows7.0/win-x64 那一段，日常 build 与 publish 不会各自改写锁文件
+      （去掉全局 RuntimeIdentifier 后必须保留这一层，否则每次 build 都会删掉该段）。
+    -->
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <!--
+      单文件分析器显式常开。它是微软的编译期提示（某 API 不适合单文件），随
+      PublishSingleFile 隐式打开；若让它跟着发布属性走，日常 build 的依赖图里没有
+      Microsoft.NET.ILLink.Tasks，发布时又会有，packages.lock.json 会被两边来回改写。
+      这里写成常量 true，使 build 与 publish 的还原图一致、锁文件稳定，
+      发布产物也与改动前逐字节相同（实测未开时单文件 exe 小 441 字节）。
+    -->
+    <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
+    <AssemblyName>ThermalTrace</AssemblyName>
+    <RootNamespace>ThermalTrace</RootNamespace>
+    <ApplicationManifest Condition=" '$(NoElevation)' != 'true' ">app.manifest</ApplicationManifest>
+    <Product>ThermalTrace</Product>
+    <AssemblyTitle>ThermalTrace</AssemblyTitle>
+    <!--
+      版本号单一来源：只在这里写一处，其余字段由 SDK 由它派生，不再手写重复值。
+      - Version：展示版本，允许 0.3.0 或 0.3.0-beta.1 形式。
+      - AssemblyVersion / FileVersion：SDK 取 Version 的前三段并补零成四段，
+        0.3.0 派生为 0.3.0.0；预发布标识不进入这两个字段。
+      - InformationalVersion：取自 Version；发布极趣推送版时 SDK 会自动附加 commit 哈希。
+      构建、发布与安装包脚本统一通过 scripts\version.ps1 读取这里，不再各写正则。
+      四段映射与安装包版本比较规则由 scripts\version.ps1 统一处理。
+    -->
+    <Version>0.3.0</Version>
+    <Company>AlfieSigma</Company>
+    <Authors>AlfieSigma</Authors>
+    <Copyright>Copyright (c) 2026 AlfieSigma</Copyright>
+    <!--
+      依赖锁定：生成 src\ThermalTrace\packages.lock.json 并随源码入库。
+      本项目只有一个直接依赖，但 LibreHardwareMonitorLib 会传递引入 System.Management，
+      版本漂移会直接导致传感器读不出来。锁文件入库后别人/CI 能复现同一套版本。
+    -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- exe 文件 / 任务栏 / 快捷方式图标。素材由 scripts\gen-icon.ps1 生成，改设计改脚本即可。 -->
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <!-- 注意：不要开启 InvariantGlobalization。本工具全程处理中文文案与中文排序，
+         invariant 模式下 CultureInfo("zh-CN") 会抛 CultureNotFoundException。体积代价可接受。 -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- 控制台交互需要 STA：绑定向导与托盘上下文菜单 -->
+    <ApplicationDefaultFont>Microsoft YaHei UI, 9pt</ApplicationDefaultFont>
+    <!-- PerMonitorV2：曲线面板在高 DPI 屏上不错位（不能在清单里配，见 app.manifest 注释） -->
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationVisualStyles>true</ApplicationVisualStyles>
+    <!--
+      常驻进程 GC 策略（内存优化）。
+
+      .NET 的 GC 是懒的：后台常驻进程的工作集会贴着历史峰值（启动时
+      JIT / LHM 全硬件枚举 / WMI 那批瞬态垃圾）只涨不落。
+      GCConserveMemory=9 让 GC 更积极地收编并把空闲堆段还给 OS，
+      代价是 GC 略频繁——本程序稳态分配率接近 0（每 5 秒一条采样），这个交换划算。
+
+      这一行管"长期"，启动峰值那一下由 Core\StartupGc.cs 补（启动 30 秒后收一次）。
+      值域 0~9，默认 0；调整前应先做实测对比。
+    -->
+    <GCConserveMemory>9</GCConserveMemory>
+    <!--
+      【普通版构建开关】默认开启推送；publish.ps1 -Edition standard 传 -p:PushEnabled=false。
+      关闭时：不定义 PUSH_ENABLED、整包排除 Push\*.cs，源码里的推送界面 / 调度 / CLI 由 #if 裁掉。
+      运行时隐藏会留下可绕过的推送路径，长期分支会让两版代码漂移，所以用构建期裁剪。
+    -->
+    <PushEnabled Condition="'$(PushEnabled)' == ''">true</PushEnabled>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(PushEnabled)' == 'true'">
+    <DefineConstants>$(DefineConstants);PUSH_ENABLED</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(PushEnabled)' != 'true'">
+    <Compile Remove="Push\**\*.cs" />
+  </ItemGroup>
+
+  <!--
+    单文件 / 自包含发布（Step S0 交付目标：一个 exe 直接双击运行，目标机无需装 .NET）
+
+    为什么带条件（日常构建不需要自包含单文件）：
+    这些属性原先在全局 PropertyGroup 里，导致日常 dotnet build 也生成自包含单文件，
+    bin 与 obj 各多出上百 MB；而日常构建根本不需要这些。现在只在发布时生效：
+    scripts\publish.ps1 与 scripts\smoke.ps1 都显式传 -p:SelfContained=true
+    与 -p:PublishSingleFile=true（并带 -r win-x64），所以发布产物与以前一致。
+    日常 dotnet build 输出改为依赖本机 .NET 8 桌面的多文件目录。
+
+    代价：直接跑裸 dotnet publish（不带这两个 -p）不再自动得到自包含单文件，
+    发布必须走 scripts\publish.ps1。
+  -->
+  <PropertyGroup Condition="'$(SelfContained)' == 'true' or '$(PublishSingleFile)' == 'true'">
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
+    <SelfContained Condition="'$(SelfContained)' == ''">true</SelfContained>
+    <PublishSingleFile Condition="'$(PublishSingleFile)' == ''">true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract Condition="'$(IncludeNativeLibrariesForSelfExtract)' == ''">true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile Condition="'$(EnableCompressionInSingleFile)' == ''">true</EnableCompressionInSingleFile>
+    <DebugType>embedded</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      硬件传感器读取（MSR / EC）。唯一直接依赖。
+      注意: System.Management 由 LibreHardwareMonitorLib 传递引入（10.0.2），
+      不要在此处显式声明更低的版本，否则触发 NU1605 包降级错误。
+    -->
+    <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
+    <!--
+      DPAPI：API Key 在本地加密存储（CurrentUser 作用域）。
+      ProtectedData 不在 .NET 基础类库里，需要这个包；与 LibreHardwareMonitorLib 无传递关系。
+      普通版（PushEnabled=false）没有 API Key 存储，依赖随推送代码一起裁掉。
+    -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0"
+                      Condition="'$(PushEnabled)' == 'true'" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="app.manifest" CopyToOutputDirectory="PreserveNewest" />
+    <!-- ApplicationIcon 只在编译期读取，不需要拷到输出目录 -->
+    <None Include="app.ico" />
+  </ItemGroup>
+
+</Project>
