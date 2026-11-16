@@ -14,12 +14,12 @@ internal sealed record BarGroup(string Category, double? Cur, double? Prev)
 }
 
 /// <summary>
-/// 自绘分组柱状图：每类别两根柱并排（本期 / 上期），Δ 值标在柱顶。
+/// 自绘分组柱状图：每类别两根柱并排（本期 / 上期），Δ 值标在柱顶（决策 D3）。
 ///
 /// 【数据来源】直接吃 <c>TrendReport.Month</c> / <c>Week</c> / <c>Comparison</c> 的
 /// <c>CategoryComparison</c>，自己不做任何聚合——与 <c>--trend</c> 报告同源同值。
 ///
-/// 【不画什么】不画 3D、阴影、渐变（WinForms 下这些一律显廉价）。
+/// 【不画什么】不画 3D、阴影、渐变（§"图表绘制硬性要求"：WinForms 下这些一律显廉价）。
 /// 上期柱用 Accent 与卡面的中间色，同色系但明显更淡，一眼能分主次。
 /// </summary>
 internal sealed class BarChart : BufferedPanel

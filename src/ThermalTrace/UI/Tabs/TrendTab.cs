@@ -8,9 +8,9 @@ using ThermalTrace.UI.Charts;
 namespace ThermalTrace.UI.Tabs;
 
 /// <summary>
-/// 「趋势分析」页：顶部切换折线 / 柱状 + 时间范围，下面是自绘图，底部一行结论。
+/// 「趋势分析」页（C3，决策 D3）：顶部切换 折线 / 柱状 + 时间范围，下面是自绘图，底部一行结论。
 ///
-/// 【取值规则】
+/// 【取值规则（docs/done/gui/gui_stage_c.md §C3）】
 ///  - 折线：X = 日期，Y = ΔT，每个负载类别一条线（Cool→Hot 语义色）
 ///  - 柱状：直接用 <c>TrendReport.Comparison</c> 的 <c>CurDeltaT</c> / <c>PrevDeltaT</c>，
 ///    <c>Comparable == false</c> 的类别跳过，不画空柱
@@ -29,6 +29,7 @@ internal sealed class TrendTab : ThemedTabPage
     private readonly AccentButton _lineButton;
     private readonly AccentButton _barButton;
     private readonly AccentButton _hardwareButton;
+    private readonly AccentButton _durationButton;
     private readonly AccentButton _rangeWeek;
     private readonly AccentButton _rangeMonth;
     private readonly AccentButton _rangeAll;
@@ -39,6 +40,7 @@ internal sealed class TrendTab : ThemedTabPage
     private readonly Panel _stage;
     private readonly LineChart _lineChart;
     private readonly BarChart _barChart;
+    private readonly LineChart _durationChart;
     private readonly TableLayoutPanel _hardwareHost;
     private readonly LineChart _gpuChart;
     private readonly LineChart _ssdChart;
@@ -53,8 +55,8 @@ internal sealed class TrendTab : ThemedTabPage
     /// <summary>分档时长条带的高度；隐藏时整行收为 0，图表占满。</summary>
     private const float UsageRowHeight = 80f;
 
-    /// <summary>趋势页的三个视图（3.3 加入「硬件」）。</summary>
-    private enum TrendView { Line, Bar, Hardware }
+    /// <summary>趋势页的四个视图（3.3 加入「硬件」，0.3.2 加入「时长」）。</summary>
+    private enum TrendView { Line, Bar, Hardware, Duration }
 
     private TrendView _view = TrendView.Line;
     private TrendWindow _window = TrendWindow.Week;
@@ -96,15 +98,17 @@ internal sealed class TrendTab : ThemedTabPage
         };
 
         _toolbar.Controls.Add(TextLabel("视图"));
-        _lineButton = new AccentButton { Text = "折线", Width = 64, Height = 28, Primary = true, Margin = new Padding(0, 3, 8, 0) };
-        _barButton = new AccentButton { Text = "柱状", Width = 64, Height = 28, Primary = false, Margin = new Padding(0, 3, 8, 0) };
-        _hardwareButton = new AccentButton { Text = "硬件", Width = 64, Height = 28, Primary = false, Margin = new Padding(0, 3, 0, 0) };
+        _lineButton = new AccentButton { Text = "折线", Width = 56, Height = 28, Primary = true, Margin = new Padding(0, 3, 8, 0) };
+        _barButton = new AccentButton { Text = "柱状", Width = 56, Height = 28, Primary = false, Margin = new Padding(0, 3, 8, 0) };
+        _hardwareButton = new AccentButton { Text = "硬件", Width = 56, Height = 28, Primary = false, Margin = new Padding(0, 3, 8, 0) };
+        _durationButton = new AccentButton { Text = "时长", Width = 56, Height = 28, Primary = false, Margin = new Padding(0, 3, 0, 0) };
         _lineButton.Click += (_, _) => SetView(TrendView.Line);
         _barButton.Click += (_, _) => SetView(TrendView.Bar);
         _hardwareButton.Click += (_, _) => SetView(TrendView.Hardware);
-        _toolbar.Controls.AddRange([_lineButton, _barButton, _hardwareButton]);
+        _durationButton.Click += (_, _) => SetView(TrendView.Duration);
+        _toolbar.Controls.AddRange([_lineButton, _barButton, _hardwareButton, _durationButton]);
 
-        _toolbar.Controls.Add(Spacer(16));
+        _toolbar.Controls.Add(Spacer(10));
         _toolbar.Controls.Add(TextLabel("范围"));
 
         _rangeWeek = new AccentButton { Text = "近 7 天", Width = 66, Height = 28, Primary = true, Margin = new Padding(0, 3, 8, 0) };
@@ -116,8 +120,8 @@ internal sealed class TrendTab : ThemedTabPage
         _toolbar.Controls.AddRange([_rangeWeek, _rangeMonth, _rangeAll]);
 
         // 供电切换：与今日概览同一套按钮语义。工具条 WrapContents=false 且行高固定，
-        // 加这两枚按钮后整排约 680px，收窄上方按钮留出余量，760px 最小窗口内不会挤出。
-        _toolbar.Controls.Add(Spacer(8));
+        // 加入「时长」视图与这两枚供电按钮后整排约 710px，760px 最小窗口内不会挤出。
+        _toolbar.Controls.Add(Spacer(4));
         _toolbar.Controls.Add(TextLabel("供电"));
         _powerAc = new AccentButton { Text = "交流", Width = 60, Height = 28, Primary = true, Margin = new Padding(0, 3, 8, 0) };
         _powerDc = new AccentButton { Text = "电池", Width = 60, Height = 28, Primary = false, Margin = new Padding(0, 3, 0, 0) };
@@ -125,11 +129,13 @@ internal sealed class TrendTab : ThemedTabPage
         _powerDc.Click += (_, _) => SetPowerSource(false);
         _toolbar.Controls.AddRange([_powerAc, _powerDc]);
 
-        // ---------------- 图表区（折线 / 柱状 / 硬件 三选一，另两个隐藏） ----------------
+        // ---------------- 图表区（折线 / 柱状 / 硬件 / 时长 四选一，其余隐藏） ----------------
         _stageHost = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0), BackColor = Theme.Current.Bg };
         _stage = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0), BackColor = Theme.Current.Bg };
         _lineChart = new LineChart { Dock = DockStyle.Fill };
         _barChart = new BarChart { Dock = DockStyle.Fill, Visible = false };
+        _durationChart = new LineChart { Dock = DockStyle.Fill, Visible = false };
+        _stage.Controls.Add(_durationChart);
         _stage.Controls.Add(_barChart);
         _stage.Controls.Add(_lineChart);
 
@@ -239,7 +245,7 @@ internal sealed class TrendTab : ThemedTabPage
 
     /// <summary>
     /// 重新取数并重画。窗口是"隐藏而非销毁"，每次打开主窗口、每次切回本页都要调一次。
-    /// 设置页改了桶边界后切回来也靠它立即重算。
+    /// 设置页改了桶边界后切回来也靠它立即重算（§2.7 —— 这是阶段 C 的验收项之一）。
     /// </summary>
     public void RefreshData()
     {
@@ -249,7 +255,7 @@ internal sealed class TrendTab : ThemedTabPage
         {
             _settings = SettingsStore.Load();
             // 趋势报告由宿主共享给解读页，一次打开内只构建一份（开窗提速 B 项）；
-            // 硬件趋势按需构建：折线 / 柱状视图不取，只有硬件视图与解读卡片要。
+            // 硬件趋势按需构建（G07）：折线 / 柱状视图不取，只有硬件视图与解读卡片要。
             _report = MainWindowHost.GetSharedReport(_settings, _window, _onAc);
             _hardware = _view == TrendView.Hardware
                 ? MainWindowHost.GetHardwareTrend(_settings, _window)
@@ -275,6 +281,7 @@ internal sealed class TrendTab : ThemedTabPage
         _lineButton.Primary = view == TrendView.Line;
         _barButton.Primary = view == TrendView.Bar;
         _hardwareButton.Primary = view == TrendView.Hardware;
+        _durationButton.Primary = view == TrendView.Duration;
 
         // 柱状图没有上期可比数据：从「全部」切到柱状时自动落到近 30 天，
         // 既不画空柱，也不让人对着一个点了没反应的按钮（G7）。
@@ -286,12 +293,12 @@ internal sealed class TrendTab : ThemedTabPage
             return;
         }
 
-        // 切到硬件视图才取硬件趋势：首次一次构建，之后同一窗口复用，不重复构建。
+        // 切到硬件视图才取硬件趋势（G07）：首次一次构建，之后同一窗口复用，不重复构建。
         if (view == TrendView.Hardware && _settings is not null)
             _hardware = MainWindowHost.GetHardwareTrend(_settings, _window);
 
-        // 三个视图取的是已读到的数据的不同侧面，不必重新读 CSV
-        if (_report is not null || _hardware is not null) Render();
+        // 四个视图取的是已读到的数据的不同侧面，不必重新读 CSV
+        if (_view == TrendView.Hardware ? _hardware is not null : _report is not null) Render();
         else RefreshData();
     }
 
@@ -321,7 +328,7 @@ internal sealed class TrendTab : ThemedTabPage
         _rangeMonth.Primary = ReferenceEquals(_window, TrendWindow.Month);
         _rangeAll.Primary = ReferenceEquals(_window, TrendWindow.All);
 
-        // 柱状视图没有上期窗口可比，「全部」置灰且不可点；折线 / 硬件视图恢复（G7）。
+        // 柱状视图没有上期窗口可比，「全部」置灰且不可点；其余视图恢复（G7）。
         _rangeAll.Enabled = _view != TrendView.Bar;
     }
 
@@ -337,12 +344,19 @@ internal sealed class TrendTab : ThemedTabPage
         var report = _report;
         if (settings is null || report is null) return;
 
+        // 时长视图不套用折线的「至少 3 天」门槛：1~2 天也要能看到当天的分档时长。
+        if (_view == TrendView.Duration)
+        {
+            RenderDuration(settings, report);
+            return;
+        }
+
         var days = report.Days;
         if (days.Count < 3)
         {
-            // 空态：依据 TrendSlope.HasTrend => Points >= 3，后端只认 3 个点以上，
+            // 空态（§C3）：依据 TrendSlope.HasTrend => Points >= 3，后端只认 3 个点以上，
             // 前端就照实转述，绝不画一张空网格图糊弄。
-            // "一天都没有"和"还差一天"是两种心情，分开说：
+            // 【C5 文案走查】"一天都没有"和"还差一天"是两种心情，分开说：
             // 前者要讲清"什么时候开始有"，后者要讲清"还差几天"。
             if (days.Count == 0)
             {
@@ -372,10 +386,12 @@ internal sealed class TrendTab : ThemedTabPage
     {
         // 折线只画当前范围窗口（G1）。report.Days 保持全量不动：
         // 解读的"已有 N 天 / 还差几天"仍按全量算，裁剪只发生在渲染层。
-        var days = CurrentWindow(report).Days;
+        // 轴按连续日历日铺（含缺日），缺日写 NaN 让线断开——不能把关机日跨过去连成"低值"。
+        var (curFrom, curTo, days) = CurrentWindow(report);
+        var slots = TrendCalendar.Build(report, curFrom, curTo);
 
-        var axis = new List<DateOnly>(days.Count);
-        foreach (var d in days) axis.Add(d.Date);
+        var axis = new List<DateOnly>(slots.Count);
+        foreach (var slot in slots) axis.Add(slot.Date);
 
         int count = Math.Max(settings.CategoryNames.Length, settings.CategoryLowerBounds.Length);
         var series = new List<ChartSeries>(count + 2);
@@ -383,31 +399,32 @@ internal sealed class TrendTab : ThemedTabPage
         {
             var pts = new List<ChartPoint>(axis.Count);
             bool any = false;
-            foreach (var d in days)
+            foreach (var slot in slots)
             {
-                var v = DeltaTOf(d, c);
+                var v = slot.Day is { } d ? DeltaTOf(d, c) : double.NaN;
                 if (!double.IsNaN(v)) any = true;
-                pts.Add(new ChartPoint(d.Date, v));
+                pts.Add(new ChartPoint(slot.Date, v));
             }
             // 整个类别一次都没采到就不出现在图例里，否则图例全是没数据的线
             if (!any) continue;
             series.Add(new ChartSeries(settings.CategoryName(c), SeriesColor(c, count), pts));
         }
 
-        // ---- 空闲基线 + 环境气温 ----
+        // ---- 空闲基线 + 环境气温（§2-2 / §2-3，仅折线视图）----
         // 两条都是绝对温度，放右轴；ΔT 留左轴。缺失日写 NaN，线自然断开，不补 0。
         // 基线为近似值的日期用空心点标出，与实测点区分。
         var approx = new HashSet<DateOnly>();
         var baselinePts = new List<ChartPoint>(axis.Count);
         var ambientPts = new List<ChartPoint>(axis.Count);
         bool anyBaseline = false, anyAmbient = false;
-        foreach (var d in days)
+        foreach (var slot in slots)
         {
-            if (!double.IsNaN(d.IdleBaseline)) anyBaseline = true;
-            if (!double.IsNaN(d.AmbientMean)) anyAmbient = true;
-            if (d.IdleApproximated) approx.Add(d.Date);
-            baselinePts.Add(new ChartPoint(d.Date, d.IdleBaseline));
-            ambientPts.Add(new ChartPoint(d.Date, d.AmbientMean));
+            var d = slot.Day;
+            if (d is not null && !double.IsNaN(d.IdleBaseline)) anyBaseline = true;
+            if (d is not null && !double.IsNaN(d.AmbientMean)) anyAmbient = true;
+            if (d?.IdleApproximated == true) approx.Add(slot.Date);
+            baselinePts.Add(new ChartPoint(slot.Date, d?.IdleBaseline ?? double.NaN));
+            ambientPts.Add(new ChartPoint(slot.Date, d?.AmbientMean ?? double.NaN));
         }
 
         var p = Theme.Current;
@@ -429,6 +446,59 @@ internal sealed class TrendTab : ThemedTabPage
     }
 
     /// <summary>
+    /// 每日各负载区间累计时长（0.3.2）。数据直接取 <c>DailyTrend</c> 已算好的
+    /// <c>CatDayStat.HoursActive</c>，按当前范围窗口与当前供电逐日铺点，不再读 CSV。
+    /// 缺日（整天没有采样）写 NaN，留空位并断开；当天有数据但某档位没有样本，
+    /// 才是该档 0h——照常出点、与相邻日连线。两者靠 <see cref="TrendDaySlot.HasData"/> 区分。
+    /// </summary>
+    private void RenderDuration(AppSettings settings, TrendReport report)
+    {
+        var (curFrom, curTo, days) = CurrentWindow(report);
+        if (days.Count == 0)
+        {
+            ShowEmpty(
+                "还没有任何历史数据",
+                $"程序每 {Math.Clamp(settings.Sampler.SliceMinutes, 5, 120)} 分钟落盘一个时间片，"
+                + "采集到第一片后这里就会出现折线。");
+            _footer.Text = "";
+            return;
+        }
+
+        ShowCharts();
+        RenderUsage(settings, report);
+
+        var slots = TrendCalendar.Build(report, curFrom, curTo);
+        int count = Math.Max(settings.CategoryNames.Length, settings.CategoryLowerBounds.Length);
+        var axis = new List<DateOnly>(slots.Count);
+        foreach (var slot in slots) axis.Add(slot.Date);
+
+        var series = new List<ChartSeries>(count);
+        for (int c = 0; c < count; c++)
+        {
+            var pts = new List<ChartPoint>(slots.Count);
+            foreach (var slot in slots)
+            {
+                // 缺日：NaN（断点）；当天有数据但该档无样本：0h（真实为零，正常连线）
+                double v = slot.Day is { } day
+                    ? day.Get(c, report.OnAc)?.HoursActive ?? 0.0
+                    : double.NaN;
+                pts.Add(new ChartPoint(slot.Date, v));
+            }
+            series.Add(new ChartSeries(
+                settings.CategoryName(c), SeriesColor(c, count), pts,
+                "h", false, false, true));
+        }
+
+        _durationChart.AxisTitle = "每日累计时长 h";
+        _durationChart.EmptyText = "当前范围内没有可绘制的数据";
+        _durationChart.SetData(axis, series);
+
+        var power = report.OnAc ? "交流" : "电池";
+        _footer.Text = $"每日各档累计时长（{power}） · "
+            + $"数据 {days[0].Date:MM-dd} ~ {days[^1].Date:MM-dd}（共 {days.Count} 天）";
+    }
+
+    /// <summary>
     /// 当前范围窗口的日期区间与可见日集。统一走 <see cref="TrendWindow.Resolve"/>，
     /// 折线、条带、环境摘要都读同一份，避免三处各自裁剪出不同窗口。
     /// </summary>
@@ -443,7 +513,7 @@ internal sealed class TrendTab : ThemedTabPage
     }
 
     /// <summary>
-    /// 分档时长条带。时长 / 样本直接取 <c>TrendAnalyzer.WindowUsage</c>，
+    /// 分档时长条带（§2-5）。时长 / 样本直接取 <c>TrendAnalyzer.WindowUsage</c>，
     /// 与 CSV 的 <c>n</c> 同一套样本加权；本方法只做配色、百分比与文案。
     /// </summary>
     private void RenderUsage(AppSettings settings, TrendReport report)
@@ -662,11 +732,12 @@ internal sealed class TrendTab : ThemedTabPage
         _stage.BringToFront();
         _lineChart.Visible = _view == TrendView.Line;
         _barChart.Visible = _view == TrendView.Bar;
+        _durationChart.Visible = _view == TrendView.Duration;
         _hardwareHost.Visible = _view == TrendView.Hardware;
         SetUsageVisible(_view != TrendView.Hardware);
     }
 
-    /// <summary>条带只在折线 / 柱状视图出现；硬件视图把整行让给两幅小图。</summary>
+    /// <summary>条带只在折线 / 柱状 / 时长视图出现；硬件视图把整行让给两幅小图。</summary>
     private void SetUsageVisible(bool visible)
     {
         _usageStrip.Visible = visible;
@@ -700,6 +771,7 @@ internal sealed class TrendTab : ThemedTabPage
         _lineButton.Invalidate();
         _barButton.Invalidate();
         _hardwareButton.Invalidate();
+        _durationButton.Invalidate();
         _rangeWeek.Invalidate();
         _rangeMonth.Invalidate();
         _rangeAll.Invalidate();

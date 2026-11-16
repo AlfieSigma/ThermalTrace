@@ -7,7 +7,7 @@ namespace ThermalTrace.Hardware;
 /// <summary>
 /// 对 LibreHardwareMonitorLib 的唯一封装。整个程序只有这一处直接接触第三方库。
 ///
-/// 关键约束：
+/// 关键约束（S1 实现中确认的坑）：
 ///  1. 必须管理员权限。LHM 靠 WinRing0 驱动读 Intel MSR；普通权限下所有值为空，
 ///     部分机型会直接抛异常。错误信息必须能引导用户，而不是抛原始驱动异常。
 ///  2. <b>Computer.Open() 之后不会自动刷新</b>，必须每拍显式调用 <see cref="Update"/>
@@ -32,8 +32,8 @@ internal sealed class HardwareMonitor : IDisposable
     {
         if (_opened) return;
 
-        // 【2026-10-13 收窄】见非 CPU 信号的取舍说明。
-        // 关掉的这三类，实测环境中本来就没有在用：
+        // 【2026-10-13 收窄】见 docs/done/analysis_caliber/noncpu_signals.md 的 D1 / D2 / D6。
+        // 关掉的这三类，本机实测本来就没有在用：
         //  - 主板与风扇：settings.json 里 fanId 与 mainboardTempId 都是空串，
         //    displayNames 里没有任何 /lpc /superio /mainboard 条目 —— 硬件压根枚举不出来；
         //  - 内存：绑定表里没有任何内存传感器；
@@ -63,7 +63,7 @@ internal sealed class HardwareMonitor : IDisposable
             try { computer.Close(); } catch { /* noop */ }
             throw new InvalidOperationException(
                 "打开硬件监控失败。读取 CPU MSR 需要管理员权限，"
-                + "且安全软件可能拦截 WinRing0 驱动（360/火绒等）。"
+                + "且安全软件可能拦截 WinRing0 驱动（联想电脑管家/360/火绒等）。"
                 + $"请以『管理员身份』重新运行，并检查安全软件拦截记录。原始错误: {ex.Message}", ex);
         }
 
@@ -86,7 +86,7 @@ internal sealed class HardwareMonitor : IDisposable
     /// <summary>
     /// 显式触发一次硬件刷新。采样循环每拍调用一次。
     ///
-    /// 【实测经验】LHM 0.9.x 不再有 Computer.Update()，也没有旧的 HardwareUpdateVisitor；
+    /// 【S1 踩坑记录】LHM 0.9.x 不再有 Computer.Update()，也没有旧的 HardwareUpdateVisitor；
     /// 刷新入口是 IHardware.Update()，且必须<b>递归</b>调用到子硬件
     /// （SSD挂在 SATA/NVMe 控制器下、GPU 挂在 PCIe 控制器下，不递归会读不到值）。
     /// Computer.Open() 之后不会自动刷新，必须每拍显式调用——
@@ -98,13 +98,18 @@ internal sealed class HardwareMonitor : IDisposable
     /// 【为什么要跳过】每 5 秒向 NVMe 取一次 SMART 健康日志是这棵树里最贵的一笔开销，
     /// 而 SSD 温度对分析毫无用处（主因是磁盘 I/O，与 CPU 负载档不是一个驱动量）。
     /// 存储硬件仍然保持枚举，只是不参与常规刷新；要读寿命计数器时走
-    /// <see cref="UpdateStorage"/>，一天一次。见非 CPU 信号说明。
+    /// <see cref="UpdateStorage"/>，一天一次。见 docs/done/analysis_caliber/noncpu_signals.md D2。
     /// </summary>
     public void Update()
     {
         if (_computer is null) throw new InvalidOperationException("尚未调用 Open()");
-        foreach (var hw in _computer.Hardware)
+        var hardware = _computer.Hardware;
+        // 休眠唤醒后设备重枚举期间，LHM 可能短暂返回 null 或半构造的节点。
+        // 遍历处一律按"缺失就跳过"处理，避免整拍抛 NullReferenceException。
+        if (hardware is null) return;
+        foreach (var hw in hardware)
         {
+            if (hw is null) continue;
             if (IsStorage(hw)) continue;
             UpdateRecursive(hw);
         }
@@ -118,8 +123,10 @@ internal sealed class HardwareMonitor : IDisposable
     public void UpdateStorage()
     {
         if (_computer is null) throw new InvalidOperationException("尚未调用 Open()");
-        foreach (var hw in _computer.Hardware)
-            if (IsStorage(hw))
+        var hardware = _computer.Hardware;
+        if (hardware is null) return;
+        foreach (var hw in hardware)
+            if (hw is not null && IsStorage(hw))
                 UpdateRecursive(hw);
     }
 
@@ -127,14 +134,14 @@ internal sealed class HardwareMonitor : IDisposable
     /// 是否存储设备。
     ///
     /// 【为什么按 Identifier 前缀判断，不用 HardwareType】
-    /// 实测 Identifier 是 <c>/nvme/0/temperature/0</c>，而 HardwareType 的枚举名
+    /// 本机实测 Identifier 是 <c>/nvme/0/temperature/0</c>，而 HardwareType 的枚举名
     /// 在不同 LHM 版本里可能是 Storage 也可能是 Nvme，靠枚举名判断等于在猜；
     /// Identifier 前缀是能直接观测到的事实（settings.json 里就写着）。
     /// 两条判据取"或"，换个版本也不至于整块漏掉。
     /// </summary>
     private static bool IsStorage(IHardware hw)
     {
-        var id = hw.Identifier.ToString();
+        var id = hw.Identifier?.ToString() ?? "";
         return IsStorageId(id)
                || hw.HardwareType.ToString().StartsWith("Storage", StringComparison.OrdinalIgnoreCase);
     }
@@ -148,8 +155,10 @@ internal sealed class HardwareMonitor : IDisposable
     private static void UpdateRecursive(IHardware hardware)
     {
         hardware.Update();
-        foreach (var sub in hardware.SubHardware)
-            UpdateRecursive(sub);
+        var subs = hardware.SubHardware;
+        if (subs is null) return;
+        foreach (var sub in subs)
+            if (sub is not null) UpdateRecursive(sub);
     }
 
     private bool HasAnyTemperature()
@@ -167,16 +176,20 @@ internal sealed class HardwareMonitor : IDisposable
         _sensors.Clear();
         if (_computer is null) return;
 
-        foreach (var hw in _computer.Hardware)
+        var hardware = _computer.Hardware;
+        if (hardware is null) { _indexedHardwareCount = -1; return; }
+        foreach (var hw in hardware)
         {
+            if (hw is null || hw.Sensors is null) continue;
             foreach (var sensor in hw.Sensors)
             {
-                var id = sensor.Identifier.ToString();
+                if (sensor is null) continue;
+                var id = sensor.Identifier?.ToString();
                 if (!string.IsNullOrEmpty(id))
                     _sensors[id] = sensor;
             }
         }
-        _indexedHardwareCount = _computer.Hardware.Count;
+        _indexedHardwareCount = hardware.Count;
     }
 
     /// <summary>硬件拓扑变化时自动重建索引（GPU 热插拔、插拔扩展坞、休眠唤醒后设备重枚举）。</summary>
@@ -220,7 +233,7 @@ internal sealed class HardwareMonitor : IDisposable
         GpuC = OrNa(ReadById(binding.GpuTempId)),
         GpuC2 = OrNa(ReadById(binding.Gpu2TempId)),
         // GPU 负载（2026-10-16 口径修正）：使用时长从此按"负载 > 0"算，
-        // 不再按"采到温度即算使用"——后者等于开机时长。
+        // 不再按"采到温度即算使用"——后者在本机等于开机时长。
         // 绑定早在 settings.json 里就有（gpuUtilId / gpu2UtilId），只是以前不读。
         GpuLoadPct = OrNa(ReadById(binding.GpuUtilId)),
         Gpu2LoadPct = OrNa(ReadById(binding.Gpu2UtilId)),
@@ -252,9 +265,11 @@ internal sealed class HardwareMonitor : IDisposable
         if (_computer is null) throw new InvalidOperationException("尚未调用 Open()");
 
         var byName = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
-        foreach (var hw in _computer.Hardware)
-            if (IsStorage(hw))
-                CollectStorageValues(hw, byName);
+        var hardware = _computer.Hardware;
+        if (hardware is not null)
+            foreach (var hw in hardware)
+                if (hw is not null && IsStorage(hw))
+                    CollectStorageValues(hw, byName);
 
         double Get(string name) => byName.TryGetValue(name, out var v) ? v : double.NaN;
 
@@ -269,15 +284,21 @@ internal sealed class HardwareMonitor : IDisposable
 
     private static void CollectStorageValues(IHardware hw, Dictionary<string, double> into)
     {
-        foreach (var s in hw.Sensors)
+        if (hw.Sensors is not null)
         {
-            var name = s.Name?.Trim();
-            if (string.IsNullOrEmpty(name)) continue;
-            if (s.Value is not { } v || float.IsNaN(v) || float.IsInfinity(v)) continue;
-            into.TryAdd(name, v);   // 同名只取第一个：多块盘时不会被后一块盖掉
+            foreach (var s in hw.Sensors)
+            {
+                if (s is null) continue;
+                var name = s.Name?.Trim();
+                if (string.IsNullOrEmpty(name)) continue;
+                if (s.Value is not { } v || float.IsNaN(v) || float.IsInfinity(v)) continue;
+                into.TryAdd(name, v);   // 同名只取第一个：多块盘时不会被后一块盖掉
+            }
         }
-        foreach (var sub in hw.SubHardware)
-            CollectStorageValues(sub, into);
+        var subs = hw.SubHardware;
+        if (subs is null) return;
+        foreach (var sub in subs)
+            if (sub is not null) CollectStorageValues(sub, into);
     }
 
     // ---------------- 枚举 ----------------
@@ -289,12 +310,16 @@ internal sealed class HardwareMonitor : IDisposable
         EnsureIndexFresh();
 
         var list = new List<SensorDescriptor>();
-        foreach (var hw in _computer.Hardware)
+        var hardware = _computer.Hardware;
+        if (hardware is null) return list;
+        foreach (var hw in hardware)
         {
+            if (hw is null || hw.Sensors is null) continue;
             foreach (var s in hw.Sensors)
             {
+                if (s is null) continue;
                 list.Add(new SensorDescriptor(
-                    Identifier: s.Identifier.ToString(),
+                    Identifier: s.Identifier?.ToString() ?? "",
                     Name: s.Name,
                     HardwareName: hw.Name,
                     HardwareType: hw.HardwareType.ToString(),
@@ -340,6 +365,29 @@ internal sealed class HardwareMonitor : IDisposable
         finally
         {
             _computer = null;
+        }
+    }
+
+    /// <summary>
+    /// 【2026-11-14】休眠唤醒 / 连续异常后的硬件重建。
+    /// 顺序关闭再打开，不并发持有两个 Computer —— LHM 的驱动句柄是进程级的，
+    /// 两个 Computer 同时打开会互相踩。重建走与首次启动相同的 Open() 路径：
+    /// 全量枚举 + 建索引 + 立即刷新 + 校验至少一个温度传感器可读。
+    /// 由采样线程独占调用，不放 UI 线程；失败时保留已关闭状态，由调用方退避重试。
+    /// </summary>
+    public bool TryRebuild(out string error)
+    {
+        error = "";
+        Close();
+        try
+        {
+            Open();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            error = $"{ex.GetType().Name}: {ex.Message}";
+            return false;
         }
     }
 

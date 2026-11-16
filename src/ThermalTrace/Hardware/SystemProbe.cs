@@ -90,7 +90,7 @@ internal static class SystemProbe
     /// <summary>
     /// 只读 CPU 型号名 —— 走注册表，毫秒级。
     ///
-    /// 【为什么单独开这一个方法】WMI 查一次 Win32_Processor 实测 **1532 ms**，
+    /// 【为什么单独开这一个方法】WMI 查一次 Win32_Processor 本机实测 **1532 ms**，
     /// 而 <see cref="ReadCpuIdentity"/> 是在采样服务<b>启动路径上同步</b>调用的
     /// （FingerprintStore 登记口径指纹），托盘图标要等它查完才出现。
     /// 核数不是启动路径必需的信息，仍留在 <see cref="ReadCpuIdentity"/> 里给自检/诊断用。
@@ -212,7 +212,7 @@ internal static class SystemProbe
                     // 【S1踩坑】HardwareType 枚举里没有 Gpu 成员（Gpu 会编译失败），
                     // 只能用 ToString() 做大小写不敏感比较
                     var ht = hw.HardwareType.ToString();
-                    // 【实测】显卡节点是 "GpuIntel" / "GpuNvidia"，没有裸 "gpu" 这个取值，
+                    // 【S1 实测】显卡节点是 "GpuIntel" / "GpuNvidia"，没有裸 "gpu" 这个取值，
                     // 因此必须前缀匹配，否则显卡会整体漏掉（曾导致 GPU 显示为"未识别"）
                     if (ht.StartsWith("Gpu", StringComparison.OrdinalIgnoreCase)
                         || ht.StartsWith("Tpu", StringComparison.OrdinalIgnoreCase))

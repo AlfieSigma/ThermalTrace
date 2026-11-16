@@ -57,7 +57,7 @@ internal sealed class TrayIconHost : IDisposable
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) =>
         {
-            // 【2026-10-09 修复】主线程现在跑 Application.Run() 消息循环，
+            // 【2026-10-09 阶段A修复】主线程现在跑 Application.Run() 消息循环，
             // 仅 Cancel 采样线程不会退出程序，需同时退出消息循环。
             _sampler.Cancel();
             Application.Exit();
@@ -179,6 +179,12 @@ internal sealed class TrayIconHost : IDisposable
             MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
+    /// <summary>系统唤醒后立即刷一次状态项，不必等下一个 10 秒定时器。</summary>
+    internal void RefreshTooltipNow()
+    {
+        if (!_disposed) RefreshTooltip();
+    }
+
     private void RefreshTooltip()
     {
         var s = _sampler.Latest;
@@ -217,6 +223,14 @@ internal sealed class TrayIconHost : IDisposable
         if (_sampler.StopRequested || _sampler.StartedAt > DateTimeOffset.Now.AddSeconds(-15))
             return "";
 
+        // 系统挂起时挂钟时间会跳过整段休眠时长，心跳差不是停摆证据。
+        // 唤醒侧会重置心跳并请求重建硬件，这里只需在挂起期间不误报。
+        if (_sampler.Suspended)
+        {
+            _stallLogged = false;
+            return "";
+        }
+
         if (!_sampler.IsRunning)
         {
             if (_sampler.TryRestart())
@@ -229,6 +243,11 @@ internal sealed class TrayIconHost : IDisposable
         if (age <= threshold)
         {
             _stallLogged = false;
+            // 线程在转但每拍都抛异常：心跳是新的，旧版会一直显示"采样正常"，
+            // 实际一个样本都没入库。这里按可观测事实给出正在自愈的状态。
+            var streak = _sampler.ConsecutiveErrors;
+            if (streak >= 3)
+                return $"采样连续异常 {streak} 拍，正在自动重建硬件监控（已恢复 {_sampler.RecoveryCount} 次）";
             return "";
         }
 

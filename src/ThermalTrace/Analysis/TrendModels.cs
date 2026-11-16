@@ -79,6 +79,40 @@ public sealed class DailyTrend
         (onAc ? Ac : Dc).TryGetValue(category, out var s) ? s : null;
 }
 
+/// <summary>
+/// 窗口内按日历日连续排列的一天。<see cref="Day"/> 为 null = 当天没有任何采样（缺日），
+/// 这与"当天有采样但某档位没有样本"是两件事，不能混为一谈。
+/// </summary>
+public readonly record struct TrendDaySlot(DateOnly Date, DailyTrend? Day)
+{
+    /// <summary>当天是否有采样。false 时绘图必须留空位、不补 0。</summary>
+    public bool HasData => Day is not null;
+}
+
+/// <summary>
+/// 按天绘图的唯一取数入口：把窗口铺成连续日历日，缺日保留 null 槽。
+///
+/// 【为什么需要它】<see cref="TrendReport.Days"/> 只含有 CSV 行的日期，直接遍历它铺点，
+/// 横轴会被压成"有数据的天"，关机缺日被相邻两天跨过去连线，看起来像当天有低值。
+/// GUI 折线 / 时长与墨水屏槽 1 共用这一份，避免各自补日、各自补 0。
+/// </summary>
+public static class TrendCalendar
+{
+    /// <summary>把 [from, to] 铺成逐日槽位；窗口外的日期不出现，缺日槽的 Day 为 null。</summary>
+    public static List<TrendDaySlot> Build(TrendReport report, DateOnly from, DateOnly to)
+    {
+        if (to < from) return new List<TrendDaySlot>();
+
+        var byDate = new Dictionary<DateOnly, DailyTrend>(report.Days.Count);
+        foreach (var d in report.Days) byDate[d.Date] = d;
+
+        var slots = new List<TrendDaySlot>(to.DayNumber - from.DayNumber + 1);
+        for (var day = from; day <= to; day = day.AddDays(1))
+            slots.Add(new TrendDaySlot(day, byDate.GetValueOrDefault(day)));
+        return slots;
+    }
+}
+
 /// <summary>两个滚动时间窗口（近 7 天 vs 前 7 天 / 近 30 天 vs 前 30 天）在某类别上的对比。</summary>
 public sealed record CategoryComparison(
     string Category,
@@ -105,9 +139,9 @@ public sealed record TrendSlope(double PerDay, int Points)
 /// <summary>
 /// 趋势对比的时间窗口：本期 CurDays 天 vs 紧邻其前的 PrevDays 天。
 ///
-/// 【为什么要有它】<c>TrendAnalyzer.Build</c> 原本把 7 天 / 30 天两套窗口写死，
-/// 而趋势页要能切换时间范围。加它时用<b>可选参数</b>：<c>window == null</c> 时行为保持不变，
-/// CLI <c>--trend</c> 一个字都不用改。
+/// 【为什么要有它】<c>TrendAnalyzer.Build</c> 原本把 7 天 / 30 天两套窗口写死（§2.6），
+/// 而趋势页要能切换时间范围。加它时用<b>可选参数</b>：<c>window == null</c> 时行为与
+/// 阶段 B 完全一致，CLI <c>--trend</c> 一个字都不用改。
 ///
 /// 【几何约定】两个窗口首尾相接、不留空隙：
 /// 本期 = [last-(CurDays-1), last]，上期 = [curFrom-PrevDays, curFrom-1]。

@@ -5,7 +5,7 @@ namespace ThermalTrace.Hardware;
 /// <summary>
 /// 传感器自动绑定与校验。
 ///
-/// 为什么必须自动：在 4 核 8 线程的 Intel CPU 上，LHM 通常暴露 "CPU Package"、"CPU Package (Tdie/Tctl)"、
+/// 为什么必须自动：i5-1135G7 上 LHM 通常暴露 "CPU Package"、"CPU Package (Tdie/Tctl)"、
 /// "Core Max"、"Core Average"、"CPU Package Power"、"CPU Package Clamp"、"Core #N Clock"、
 /// "CPU Total" 等十余个条目，而且每台机器、每个显卡驱动版本暴露的集合都不一样。
 /// 手选一次太痛苦，换显卡驱动后 Identifier 变化还会读到 null。
@@ -68,7 +68,7 @@ internal static class SensorCatalog
                 || n.Contains("overall", StringComparison.OrdinalIgnoreCase))?.Identifier
             ?? cpuLoads.FirstOrDefault()?.Identifier ?? "";
 
-        // 【实测】"CPU Core Max" 是现成的单核峰值，优先用它
+        // 【S1 实测】"CPU Core Max" 是现成的单核峰值，优先用它
         b.CpuCoreMaxUtilId = Pick(cpuLoads, n =>
             n.Contains("core max", StringComparison.OrdinalIgnoreCase))?.Identifier ?? "";
 
@@ -80,7 +80,7 @@ internal static class SensorCatalog
             .Select(g => g.First().Identifier)
             .ToList();
 
-        // 【实测】"Distance to TjMax"：Intel 降频余量指示器
+        // 【S1 实测】"Distance to TjMax"：Intel 降频余量指示器
         b.CpuDistanceToTjMaxId = Pick(
             Of(sensors, "Temperature", isCpu: true),
             n => n.Contains("tjmax", StringComparison.OrdinalIgnoreCase))?.Identifier ?? "";
@@ -162,7 +162,7 @@ internal static class SensorCatalog
             Of(s, "Fan", any: true), b.FanId),
         new Role("MainboardTempId", "主板温度", "最低稳定值 ≈ 环境温度 + 3~5℃，用作环境代理",
             Of(s, "Temperature", isMotherboard: true), b.MainboardTempId),
-        new Role("GpuTempId", "主 GPU 温度", "默认独显",
+        new Role("GpuTempId", "主 GPU 温度", "默认独显（MX450）",
             Of(s, "Temperature", isGpu: true), b.GpuTempId),
         new Role("Gpu2TempId", "核显温度", "轻负载发热常来自核显；与独显分开记录才不失真",
             Of(s, "Temperature", isGpu: true), b.Gpu2TempId)
@@ -176,7 +176,7 @@ internal static class SensorCatalog
 
     /// <summary>
     /// 从传感器名里解析核心序号。
-    /// 【实测】逐线程利用率通常命名为 "CPU Core #1 Thread #2"，
+    /// 【S1 实测】本机的逐线程利用率命名为 "CPU Core #1 Thread #2"，
     /// 直接取 '#' 后整段会因" 1 Thread #2"而解析失败；
     /// 必须只取'#' 紧跟的连续数字。同时兼容 "Core 0" / "CPU Core 0" 等写法。
     /// 返回 null 表示不是逐核心传感器（如 "CPU Total"、"CPU Core Max"）。
@@ -215,8 +215,8 @@ internal static class SensorCatalog
             if (!s.SensorType.Equals(type, StringComparison.OrdinalIgnoreCase)) continue;
             if (any) { result.Add(s); continue; }
 
-            // 【实测经验】必须按 HardwareType 判定硬件类别，绝不能靠 HardwareName 关键词。
-            // CPU 的 HardwareName 常含 "Intel" 字样（例如 "11th Gen Intel(R) Core(TM) i5"），
+            // 【S1 踩坑】必须按 HardwareType 判定硬件类别，绝不能靠 HardwareName 关键词。
+            // 本机 CPU 的 HardwareName 是 "11th Gen Intel(R) Core(TM) i5-1135G7"，
             // 含 "Intel"——若用名称匹配判定显卡，会把 CPU 的 Core Max 温度
             // 当成"核显温度"，污染整套数据。
             if (isCpu && s.IsCpu) result.Add(s);
@@ -254,7 +254,7 @@ internal static class SensorCatalog
         if (!binding.IsUsable)
         {
             items.Add(new DiagItem(DiagLevel.Error, "温度", "未绑定任何 CPU 主温度传感器",
-                "点『重新绑定传感器』重新绑定；若仍失败说明 MSR 不可读，需管理员权限且未被安全软件拦截（见 README 的常见问题）"));
+                "点『重新绑定传感器』重新绑定；若仍失败说明 MSR 不可读，需管理员权限且未被安全软件拦截（见 docs/install.md）"));
             return items;
         }
 
@@ -289,7 +289,7 @@ internal static class SensorCatalog
 
         if (fans.Count == 0)
             items.Add(new DiagItem(DiagLevel.Warn, "散热", "未检测到风扇转速传感器",
-                "部分笔记本 EC 固件不暴露转速；缺失时无法判断风扇轴承是否老化"));
+                "部分 HP EC 固件不暴露转速；缺失时无法判断风扇轴承是否老化"));
         else if (binding.FanId.Length == 0)
             items.Add(new DiagItem(DiagLevel.Warn, "散热", "风扇传感器存在但未绑定",
                 "可在『今日概览』或『设置』页点『重新绑定传感器』"));

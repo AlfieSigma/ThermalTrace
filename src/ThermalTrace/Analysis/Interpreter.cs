@@ -9,17 +9,17 @@ namespace ThermalTrace.Analysis;
 /// 趋势解读规则引擎（分析层，纯函数）：把 <see cref="TrendReport"/> 里散落的数字
 /// （ΔT 同期对比、每瓦温升、超 85℃ 时长、OLS 斜率、口径警告、清灰基准日）
 /// 组织成五层人话解读——总结 → 证据 → 归因 → 建议 → 清灰基准，外加一份
-/// 「复制数据摘要给 AI」的导出（解读口径要求）。
+/// 「复制数据摘要给 AI」的导出（docs/done/analysis_caliber/trend_interpretation.md §0）。
 ///
 /// 【三条红线】
 ///  1. 纯函数：无 IO、无 UI 依赖、不碰 CSV。输入只有 settings + report（+ window），
 ///     输出只有 <see cref="InterpretationReport"/>。GUI 卡片、HTML 报告、CLI 三处
-///     调用同一个 <see cref="Build"/>，从结构上保证"三处同源同值"。
+///     调用同一个 <see cref="Build"/>，从结构上保证"三处同源同值"（决策 D2）。
 ///  2. window 必须与构造 <see cref="TrendReport"/> 时传给
 ///     <see cref="TrendAnalyzer.Build(AppSettings, TrendWindow?)"/> 的那个一致：
 ///     <see cref="TrendReport.Comparison"/> 已按该窗口聚合，本引擎只按同一段区间
 ///     取环境气温与日期范围。不一致 = 证据区间与对比区间不是同一段，数字必对不上。
-///  3. 缺失一律「—」，绝不填 0；数据不足不给趋势判定。
+///  3. 缺失一律「—」，绝不填 0；数据不足不给趋势判定（§5.8 诚实性硬约束）。
 /// </summary>
 public static class Interpreter
 {
@@ -45,7 +45,7 @@ public static class Interpreter
     /// <param name="hardware">
     /// 非 CPU 信号报告（GPU / SSD），由 <see cref="HardwareTrend.Build(AppSettings, TrendWindow)"/>
     /// 按<b>同一个 window</b> 生成；不传则解读里不出现 GPU 混杂因素证据与 A7 归因
-    /// （旧调用方行为不变）。传了就是为了回答显卡使用时长是否上升那个问题：
+    /// （旧调用方行为不变）。传了就是为了回答 noncpu_signals D5 那个问题：
     /// ΔT 涨了，是灰堵了，还是最近更常用显卡？
     /// </param>
     public static InterpretationReport Build(AppSettings settings, TrendReport report,
@@ -72,11 +72,11 @@ public static class Interpreter
             .OrderByDescending(c => c.DeltaTDiff)
             .FirstOrDefault();
 
-        // 数据不足 → 后续规则全部不执行，总结只讲"还差几天"
+        // §5.2-1：数据不足 → 后续规则全部不执行，总结只讲"还差几天"
         var insufficient = report.DaysWithData < MinDaysForJudgment || comparable.Count == 0;
 
         // 清灰层的"衰减判定"本质上也是趋势判定（"比清灰那天热了 N 度"）：
-        // 诚实性硬约束优先于渲染条件——数据不足时整个分区不渲染，
+        // §5.8-1 的诚实性硬约束优先于 §5.6 的渲染条件——数据不足时整个分区不渲染，
         // 这与验收标准第 3 条（卡片只有"还差几天"）一致。
         // 注：口径变更窗口不受影响，清灰层照常渲染（验收标准第 4 条）。
         var cleanStat = BuildClean(settings, report, comparable);
@@ -521,7 +521,7 @@ public static class Interpreter
     }
 
     // ------------------------------------------------------------------
-    // 健康度：取所有信号中最差的一档，没有"加分抵消"
+    // 健康度（§5.2）：取所有信号中最差的一档，没有"加分抵消"
     // ------------------------------------------------------------------
 
     private static HealthLevel JudgeHealth(
@@ -546,7 +546,7 @@ public static class Interpreter
         }
 
         // 3. K/W 差（与 ΔT 同一个主类别）：恶化时升一档，改善时单独可为 Good。
-        //    最终仍取各信号最差者——K/W 改善不能抵消 ΔT 恶化。
+        //    最终仍取各信号最差者——K/W 改善不能抵消 ΔT 恶化（§5.2 末段）。
         if (primary is not null && primary.KPerWDiff is { } kw)
         {
             var dt = primary.DeltaTDiff!.Value;
@@ -570,7 +570,7 @@ public static class Interpreter
         return Worst(signals);
     }
 
-    /// <summary>升一档。Good 不会走到这里（ΔT 差 ≥ 0 与 Good 互斥）；Warning 已封顶。</summary>
+    /// <summary>升一档（§5.2-3）。Good 不会走到这里（ΔT 差 ≥ 0 与 Good 互斥）；Warning 已封顶。</summary>
     private static HealthLevel Escalate(HealthLevel level) => level switch
     {
         HealthLevel.Stable => HealthLevel.Watch,
@@ -620,7 +620,7 @@ public static class Interpreter
     }
 
     // ------------------------------------------------------------------
-    // 证据链
+    // 证据链（§5.3，描述层，≤4 条）
     // ------------------------------------------------------------------
 
     private static List<EvidenceItem> BuildEvidence(
@@ -647,7 +647,7 @@ public static class Interpreter
                 $"{T(c.CurDeltaT, "0.0")}℃ ← {T(c.PrevDeltaT, "0.0")}℃"));
         }
 
-        // GPU 使用时长：ΔT 显著上升时的混杂因素证据。
+        // GPU 使用时长：ΔT 显著上升时的混杂因素证据（3.4 / noncpu_signals D5）。
         // 【为什么排在 K/W 前面】证据上限 4 条，而 2 条 ΔT 常常就把位置占掉一半。
         // 这条要回答的是"升温是不是显卡带来的"——它不在场，读者就无法在
         // 「灰堵了」和「更常用显卡」之间做判断，归因区只能二选一地猜。
@@ -685,7 +685,7 @@ public static class Interpreter
         }
 
         // 超 85℃ 累计：可比类别求和；任一侧完全无数据就不出这条——
-        // "没采到"不能渲染成"没超温"。
+        // "没采到"不能渲染成"没超温"（§5.8-2）。
         var cur85Days = comparable.Count(c => c.CurOver85Hours is not null);
         var prev85Days = comparable.Count(c => c.PrevOver85Hours is not null);
         if (cur85Days > 0 && prev85Days > 0)
@@ -721,12 +721,12 @@ public static class Interpreter
         }
 
         // 上限 4 条；优先级即上面的加入顺序（ΔT > K/W > 超85 > 斜率 > 环境），
-        // ΔT 内部按 |差| 降序。
+        // ΔT 内部按 |差| 降序（§5.3 的"按 |ΔT 差| 降序"）。
         return items.Take(MaxEvidence).ToList();
     }
 
     // ------------------------------------------------------------------
-    // 归因矩阵：每条 = 假设 + 证据 + 置信度 + 验证方法
+    // 归因矩阵（§5.4）：每条 = 假设 + 证据 + 置信度 + 验证方法
     // ------------------------------------------------------------------
 
     private static List<AttributionItem> BuildAttributions(
@@ -803,7 +803,7 @@ public static class Interpreter
                 "分类别 ΔT 是否同步上升；不同步即强度因素"));
         }
 
-        // A7：GPU 使用时长上升（显卡与 CPU 共用散热模组，
+        // A7：GPU 使用时长上升（3.4 / noncpu_signals D5：显卡与 CPU 共用散热模组，
         // GPU 发热会抬高同等 CPU 负载下的温度，是 ΔT 上升的混杂因素）。
         // 与 A1/A2 并列而非取代：现有数据无法区分"灰堵了"和"更常用显卡"，
         // 所以这里只做"不能排除"的提示 + 可操作的验证方法，绝不下结论。
@@ -863,7 +863,7 @@ public static class Interpreter
     }
 
     // ------------------------------------------------------------------
-    // 建议映射
+    // 建议映射（§5.5，按成本升序，最多 4 条）
     // ------------------------------------------------------------------
 
     private static List<string> BuildSuggestions(
@@ -927,7 +927,7 @@ public static class Interpreter
     }
 
     // ------------------------------------------------------------------
-    // 可信度说明
+    // 可信度说明（§5.1：数据天数 / 可比类别 / 口径 / 基线近似）
     // ------------------------------------------------------------------
 
     private static string BuildConfidenceNote(TrendReport report, List<CategoryComparison> comparable)
@@ -949,7 +949,7 @@ public static class Interpreter
     }
 
     // ------------------------------------------------------------------
-    // 清灰基准层
+    // 清灰基准层（§5.6）
     // ------------------------------------------------------------------
 
     private static CleanServiceStat? BuildClean(
@@ -1034,7 +1034,7 @@ public static class Interpreter
         d.Get(category, onAc)?.DeltaT ?? double.NaN;
 
     // ------------------------------------------------------------------
-    // AI 摘要
+    // AI 摘要（§5.7，剪贴板导出，纯本地）
     // ------------------------------------------------------------------
 
     private static string BuildDigest(

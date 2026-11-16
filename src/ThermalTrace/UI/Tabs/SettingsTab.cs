@@ -12,29 +12,29 @@ using ThermalTrace.Services;
 namespace ThermalTrace.UI.Tabs;
 
 /// <summary>
-/// 「设置」页：把命令行专属能力全部 GUI 化 —— 日常使用不再需要开终端。
+/// 「设置」页（C4）：把命令行专属能力全部 GUI 化 —— 江珀日常不再需要开终端。
 ///
-/// 【控件清单】
-///  - 开机自启开关 + 状态标签（<c>AutoStart.Status() / Enable() / Disable()</c>，后端已就绪）
+/// 【控件清单（docs/done/gui/gui_stage_c.md §C4）】
+///  - 开机自启开关 + 状态标签（<c>AutoStart.Status() / Enable() / Disable()</c>，阶段 B2 后端已就绪）
 ///  - 经纬度 / 城市名 手填 + 联网获取气温 + 立即重新定位
 ///  - 主题下拉（Follow / Light / Dark → <c>UiOptions.ThemeMode</c>）
-///  - 负载类别桶边界（折叠区，改完立即重算）
+///  - 负载类别桶边界（折叠区，改完立即重算，见 §2.7）
 ///  - 清灰基准日（DateTimePicker → <c>CleanDateIso</c>，替代 <c>--reset-clean-date</c>）
 ///  - 重新自检（<c>Commands.SelfCheck()</c>）
-///  - 「墨水屏推送」分区（极趣推送版）：启用开关 / 设备 MAC（可拉云端设备列表）/
+///  - 「墨水屏推送」分区（P3，<c>docs/done/eink_push/eink_push.md</c>）：启用开关 / 设备 MAC（可拉云端设备列表）/
 ///    槽 1、槽 2 图片页页位 / 推送时刻 / API Key（掩码输入 + 清除）+「立即推送两页」+ 逐槽上次推送与适用状态
 ///
-/// 【自启开关（产品边界 R4）】
+/// 【红线 · 自启开关（docs/project.md 红线 R4）】
 /// 状态标签显示 <c>AutoStart.Status().Describe()</c> 的**四态真实结果**，
 /// 绝不能因为"调用 Enable() 没抛异常"就打「已启用」——旧实现正是这样把自启失效瞒了三天
-/// （自启的真实状态）。失败时把 <c>result.Message</c> 原样弹给用户。
+/// （docs/troubleshooting.md「自启的真实四态」）。失败时把 <c>result.Message</c> 原样弹给用户。
 ///
 /// 【为什么自己算排版】
 /// 六块分区要在 900×600 单页内放下、760×520 下也不该出现滚动条，所以排成两列并显式算宽高。
 /// 不用 Dock 流是因为"Fill 该先加还是后加"全靠 z-order，这种布局里太容易埋雷；
 /// <see cref="LayoutSections"/> 一处算清楚，改起来也只有一个地方。
 ///
-/// 【不做的事】不新增任何设置项，也不改存储层格式。
+/// 【不做的事】不新增任何设置项，也不改存储层格式（红线 §1）。
 /// 本页只是给已有的 settings.json 字段配一套可视化入口。
 /// </summary>
 internal sealed class SettingsTab : ThemedTabPage
@@ -126,7 +126,7 @@ internal sealed class SettingsTab : ThemedTabPage
         AutoEllipsis = true, Margin = new Padding(0)
     };
 
-    // ---------------- 墨水屏推送 ----------------
+    // ---------------- 墨水屏推送（P3） ----------------
 #if PUSH_ENABLED
 
     /// <summary>展开态正文高度 = 四行固定行高之和（26+30+26+30）。
@@ -153,7 +153,7 @@ internal sealed class SettingsTab : ThemedTabPage
     // 「立即推送两页」放在分区表头而不是正文里：分区默认折叠，按钮永远可见可点。
     // 折叠态左列总高 404（默认态绝不出现滚动条）；展开态总高 496，仍在 503 的可用高度内。
     private readonly AccentButton _pushNow = new() { Width = 112, Height = 26, Margin = new Padding(0, 0, 8, 0) };
-    /// <summary>槽 1 的状态行：打开时显示「上次推送」，点推送后显示本次操作反馈。</summary>
+    /// <summary>槽 1 的状态行：打开时显示「上次推送」（P3.3），点推送后显示本次操作反馈（P3.2）。</summary>
     private readonly Label _pushStatus = new()
     {
         Dock = DockStyle.Fill, AutoSize = false, TextAlign = ContentAlignment.MiddleLeft,
@@ -325,7 +325,7 @@ internal sealed class SettingsTab : ThemedTabPage
 
 #if PUSH_ENABLED
     // ==================================================================
-    // 墨水屏推送
+    // 墨水屏推送（P3）
     // ==================================================================
 
     /// <summary>
@@ -546,9 +546,9 @@ internal sealed class SettingsTab : ThemedTabPage
     }
 
     /// <summary>
-    /// 「立即推送两页」。异步执行，按钮三态：推送中… / 已推送 / 失败：{原因}；
+    /// 「立即推送两页」（P3.2 / D4）。异步执行，按钮三态：推送中… / 已推送 / 失败：{原因}；
     /// 当日幂等跳过是第四种中性态（<see cref="PushOutcome.Skipped"/>）——手动按钮遵循每日一次
-    /// ，想反复推请用命令行 <c>--force</c>。槽 2 不适用时只推槽 1，结果里会写原因。
+    /// （计划 §5.5），想反复推请用命令行 <c>--force</c>。槽 2 不适用时只推槽 1，结果里会写原因。
     /// </summary>
     private async Task OnPushNow()
     {
@@ -565,7 +565,7 @@ internal sealed class SettingsTab : ThemedTabPage
         try
         {
             var s = SettingsStore.Load();
-            // force: true —— 按钮是用户明确的一次点击，"想推就推"；每日幂等是调度的事，不绑手动按钮。
+            // force: true —— 按钮是用户明确的一次点击，"想推就推"（D4）；每日幂等是调度的事，不绑手动按钮。
             // 日志回调把重试进度也实时打到状态行（带秒级时间戳）：断网时用户能看到"第 1 次失败、30 秒后重试"，
             // 而不是干等一分钟没有下文。
             outcome = await PushService.PushAsync(
@@ -599,7 +599,7 @@ internal sealed class SettingsTab : ThemedTabPage
         UpdateSlot2Status();
     }
 
-    /// <summary>「上次推送」行：读 <c>push-state.json</c> 的槽 1 状态，日期 + 成功 / 失败原因。</summary>
+    /// <summary>「上次推送」行（P3.3）：读 <c>push-state.json</c> 的槽 1 状态，日期 + 成功 / 失败原因。</summary>
     private void RefreshPushLast()
     {
         var (date, result, error) = PushService.GetLastStatus(EinkSlot.Slot1);
@@ -955,7 +955,7 @@ internal sealed class SettingsTab : ThemedTabPage
             if (!result.Ok)
             {
                 // 原样把原因给用户看 —— 绝不能像旧实现那样"没抛异常就当成功"
-                // （自启的真实状态）
+                // （docs/troubleshooting.md「自启的真实四态」）
                 MessageBox.Show(FindForm(),
                     "注册开机自启失败\n\n" + result.Message,
                     "ThermalTrace", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -1101,7 +1101,7 @@ internal sealed class SettingsTab : ThemedTabPage
 
     /// <summary>
     /// 「立即重新定位」。<c>LocateAsync</c> 失败只返回 null，不抛异常，
-    /// 所以这里必须自己判空并提示——静默失败会让用户以为"定位好了"。
+    /// 所以这里必须自己判空并提示——静默失败会让用户以为"定位好了"（§C4 明确要求）。
     /// </summary>
     private async void OnRelocate(object? sender, EventArgs e)
     {
@@ -1165,7 +1165,7 @@ internal sealed class SettingsTab : ThemedTabPage
     }
 
     // ==================================================================
-    // 负载类别边界
+    // 负载类别边界（§2.7：改完立即重算）
     // ==================================================================
 
     private void SetBoundsOpen(bool open)
@@ -1374,7 +1374,7 @@ internal sealed class SettingsTab : ThemedTabPage
     private const string RebindNotFoundMessage =
         "未能在本机找到可用的 CPU 温度传感器，绑定未保存（配置保持原样）。\n\n"
         + "请确认是否以管理员身份运行，以及安全软件是否拦截了 WinRing0 驱动。\n"
-        + "详见 README 的常见问题。";
+        + "详见 docs/install.md 的『安全软件拦截』一节。";
 
     private const string RebindSavedHeader = "绑定已保存：\n\n";
 

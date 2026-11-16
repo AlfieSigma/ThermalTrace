@@ -21,13 +21,13 @@ public sealed class SensorBinding
     public string CpuUtilId { get; set; } = string.Empty;
 
     /// <summary>
-    /// 【实测】LHM 直接提供 "CPU Core Max"（/intelcpu/0/load/1），即所有核心中的最高利用率。
+    /// 【S1 实测】LHM 直接提供 "CPU Core Max"（/intelcpu/0/load/1），即所有核心中的最高利用率。
     /// 这是单核峰值的官方口径，比手工遍历逐核心更可靠，优先使用。
     /// </summary>
     public string CpuCoreMaxUtilId { get; set; } = string.Empty;
 
     /// <summary>
-    /// 【实测】"CPU Core #N Distance to TjMax"（/intelcpu/0/temperature/7..10）。
+    /// 【S1 实测】"CPU Core #N Distance to TjMax"（/intelcpu/0/temperature/7..10）。
     /// Intel 的降频余量指示器：接近 0 表示即将触发 thermal throttling。
     /// 对"90℃ 会不会降频"这类问题，比温度绝对值更直接。
     /// </summary>
@@ -39,7 +39,7 @@ public sealed class SensorBinding
     public string SsdTempId { get; set; } = string.Empty;
     public string GpuTempId { get; set; } = string.Empty;
 
-    /// <summary>第二 GPU（核显）的温度传感器。双显卡必须分别记录。</summary>
+    /// <summary>第二 GPU（核显 Iris Xe）的温度传感器。双显卡必须分别记录。</summary>
     public string Gpu2TempId { get; set; } = string.Empty;
 
     /// <summary>GPU 利用率传感器：主 GPU / 核显 / 全部 LHM Load 传感器。</summary>
@@ -104,8 +104,8 @@ public sealed class SensorBinding
 
 /// <summary>一次传感器枚举结果，供绑定向导与 --doctor 展示。</summary>
 /// <remarks>
-/// HardwareType 必须带上：CPU 的 HardwareName 通常也含 "Intel" 字样，
-/// 若靠名称判定显卡会把它误认成核显——
+/// HardwareType 必须带上：CPU 的 HardwareName 是 "11th Gen Intel Core i5-1135G7"，
+/// 含 "Intel" 字样，若靠名称判定显卡会把它误认成核显——
 /// 这会导致"核显温度"列实际记录的是 CPU 核心温度。
 /// </remarks>
 public sealed record SensorDescriptor(
@@ -119,7 +119,7 @@ public sealed record SensorDescriptor(
 {
     /// <summary>是否来自独立/集成显卡硬件节点。</summary>
     public bool IsGpu =>
-        // 【实测】LHM 0.9.6 的显卡节点 HardwareType 是 "GpuIntel" 与 "GpuNvidia"，
+        // 【S1 实测】本机 LHM 0.9.6 的显卡节点 HardwareType 是 "GpuIntel" 与 "GpuNvidia"，
         // 并不存在 "gpu" 这个取值（写成 HardwareType.Gpu 会编译失败）。
         // 因此必须用前缀匹配，否则会漏掉全部显卡传感器。
         HardwareType.StartsWith("Gpu", StringComparison.OrdinalIgnoreCase);

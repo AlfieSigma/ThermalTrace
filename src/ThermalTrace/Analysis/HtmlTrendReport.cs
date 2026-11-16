@@ -37,7 +37,7 @@ public static class HtmlTrendReport
   .card h2 { font-size:15px; margin:0 0 12px; }
   .headline { font-size:16px; line-height:1.7; }
   .headline b.hot { color:var(--hot); } .headline b.cool { color:var(--accent); }
-  /* 健康度徽标与分层解读（与趋势页卡片同一份 InterpretationReport） */
+  /* 健康度徽标与分层解读（B3：与趋势页卡片同一份 InterpretationReport） */
   .lv { display:inline-block; padding:1px 10px; border-radius:10px; font-size:12px;
         color:#fff; margin-right:8px; vertical-align:2px; }
   .lv-good, .lv-stable { background:var(--accent); }
@@ -97,9 +97,12 @@ public static class HtmlTrendReport
 
         // 图表
         var cats = ActiveCategories(r);
+        // 横轴按日历日铺满 [首日, 末日]（0.3.5）：整日无数据的日子保留 null 槽、折线在此断开，
+        // 不再把缺日压掉让两边隔空连线。数值仍全部来自 r.Days，统计口径不变。
+        var slots = ChartSlots(r);
         sb.AppendLine($"<div class=\"card\"><h2>ΔT 归一化温升（℃，同等负载下的相对发热，{(r.OnAc ? "交流" : "电池")}供电）</h2>");
         sb.AppendLine(Legend(cats, settings));
-        sb.AppendLine(LineChart(r.Days, cats, s => s.DeltaT, "℃", false, r.OnAc));
+        sb.AppendLine(LineChart(slots, cats, s => s.DeltaT, "℃", false, r.OnAc));
         sb.AppendLine("<div class=\"note\">ΔT = 该负载类别均温 − 当日空闲档最低温，消除夏冬室温差异后跨期可比。");
         var approxDays = r.Days.Where(d => d.IdleApproximated).ToList();
         if (approxDays.Count > 0)
@@ -109,12 +112,12 @@ public static class HtmlTrendReport
 
         sb.AppendLine("<div class=\"card\"><h2>每日超 85℃ 时长（小时）</h2>");
         sb.AppendLine(Legend(cats, settings));
-        sb.AppendLine(LineChart(r.Days, cats, s => s.HoursOver85, "h", true, r.OnAc));
+        sb.AppendLine(LineChart(slots, cats, s => s.HoursOver85, "h", true, r.OnAc));
         sb.AppendLine("</div>");
 
         sb.AppendLine("<div class=\"card\"><h2>每瓦温升（K/W，散热效率物理指标）</h2>");
         sb.AppendLine(Legend(cats, settings));
-        sb.AppendLine(LineChart(r.Days, cats, s => s.KPerW, "K/W", false, r.OnAc));
+        sb.AppendLine(LineChart(slots, cats, s => s.KPerW, "K/W", false, r.OnAc));
         sb.AppendLine("<div class=\"note\">数值越大表示同样功耗下温度越高，散热效率越差。</div></div>");
 
         // 非 CPU 信号（GPU 温度 / SSD 寿命）——3.5。数字直接读 HardwareTrend，
@@ -136,7 +139,7 @@ public static class HtmlTrendReport
         </div></div>
 """);
 
-        // AI 摘要：GUI 卡片与 --interpret 都有这份导出，
+        // AI 摘要（B3 缺口修复 2026-10-14）：GUI 卡片与 --interpret 都有这份导出，
         // HTML 报告此前没有——而报告恰恰是最常被整份转发的形态，缺了它就得回 GUI 再抄一遍。
         // 折叠呈现：默认收起不打断阅读流，要整段复制时展开全选即可。
         sb.AppendLine("<details class=\"card digest\"><summary>AI 摘要（可整段复制，贴给外部模型解读）</summary>");
@@ -147,7 +150,7 @@ public static class HtmlTrendReport
     }
 
     // ------------------------------------------------------------------
-    // 结论区：分层解读
+    // 结论区：分层解读（B3.1）
     // ------------------------------------------------------------------
 
     /// <summary>
@@ -156,12 +159,12 @@ public static class HtmlTrendReport
     /// 【为什么换掉原来的 BuildHeadline】原来这里自己拼 3~5 行结论，用的是
     /// <c>r.Week</c>（近 7 天 vs 前 7 天）自己算的阈值。于是同一个"重度负载"在
     /// GUI 页脚、解读卡片、HTML 报告里可能出现三个不同说法——结论只能有一个引擎
-    /// 现在本方法只做排版，一个数都不自己算，全取自调用方传进来的
+    /// （决策 D2）。现在本方法只做排版，一个数都不自己算，全取自调用方传进来的
     /// <see cref="InterpretationReport"/>。
     ///
     /// 【window 写进页面】报告恒按 30 天窗口解读，而 GUI 解读卡片跟随趋势页选择的范围
     /// （默认近 7 天）——不把窗口标在页面上，同一个人拿卡片和报告对数会以为数字对不上
-    /// （2026-10-14 修复：与卡片同源同值的实证缺口）。
+    /// （2026-10-14 修复：B3「与卡片同源同值」的实证缺口）。
     /// </summary>
     private static string BuildInterpretation(InterpretationReport it)
     {
@@ -212,7 +215,7 @@ public static class HtmlTrendReport
         return sb.ToString();
     }
 
-    /// <summary>健康度 → CSS 类名。颜色语义与趋势页卡片一致。</summary>
+    /// <summary>健康度 → CSS 类名。颜色语义与趋势页卡片一致（B2.3）。</summary>
     private static string LevelSlug(HealthLevel level) => level switch
     {
         HealthLevel.Good => "good",
@@ -482,24 +485,37 @@ public static class HtmlTrendReport
     // SVG 折线图
     // ------------------------------------------------------------------
 
-    private static string LineChart(List<DailyTrend> days, int[] cats,
+    /// <summary>
+    /// 把报告铺成连续日历日槽：窗口 = [首日, 末日]，整日无数据的日子 <see cref="TrendDaySlot.Day"/> 为 null。
+    /// 与 GUI 折线 / 时长共用 <see cref="TrendCalendar.Build"/>，避免 HTML 报告另写一套补日逻辑。
+    /// </summary>
+    private static List<TrendDaySlot> ChartSlots(TrendReport r)
+    {
+        if (r.Days.Count == 0) return new List<TrendDaySlot>();
+        var from = r.FirstDay ?? r.Days[0].Date;
+        var to = r.LastDay ?? r.Days[^1].Date;
+        return TrendCalendar.Build(r, from, to);
+    }
+
+    private static string LineChart(List<TrendDaySlot> slots, int[] cats,
         Func<CatDayStat, double> pick, string unit, bool zeroBased, bool onAc)
     {
-        if (days.Count == 0)
+        if (slots.Count == 0)
             return "<div class=\"muted\">暂无数据。</div>";
 
         const int W = 920, H = 260, PL = 52, PR = 16, PT = 14, PB = 38;
         int plotW = W - PL - PR, plotH = H - PT - PB;
 
-        double? Value(int cat, DailyTrend d)
+        // 缺日（Day == null）与「当天有数据但该档没样本」都返回 null，折线一律断开，不补 0。
+        double? Value(int cat, TrendDaySlot slot)
         {
-            var s = d.Get(cat, onAc);
+            var s = slot.Day?.Get(cat, onAc);
             if (s is null) return null;
             var v = pick(s);
             return double.IsNaN(v) ? null : v;
         }
 
-        var all = cats.SelectMany(c => days.Select(d => Value(c, d))).OfType<double>().ToList();
+        var all = cats.SelectMany(c => slots.Select(s => Value(c, s))).OfType<double>().ToList();
         if (all.Count == 0)
             return "<div class=\"muted\">暂无数据。</div>";
 
@@ -507,7 +523,7 @@ public static class HtmlTrendReport
         double yMax = Math.Ceiling(all.Max() + 0.5);
         if (yMax - yMin < 1) yMax = yMin + 1;
 
-        double X(int i) => days.Count == 1 ? PL + plotW / 2.0 : PL + (double)i * plotW / (days.Count - 1);
+        double X(int i) => slots.Count == 1 ? PL + plotW / 2.0 : PL + (double)i * plotW / (slots.Count - 1);
         double Y(double v) => PT + plotH - (v - yMin) / (yMax - yMin) * plotH;
 
         var svg = BeginChart(W, H);
@@ -519,15 +535,15 @@ public static class HtmlTrendReport
             AppendGridLine(svg, PL, W - PR, Y(yv), PL - 8, "end", yv);
         }
 
-        // X 轴标签：最多 8 个
-        AppendXLabels(svg, days.Count, H, X, i => days[i].Date);
+        // X 轴标签：槽位已是连续日历日，按索引抽稀即按天抽稀；最多 8 个
+        AppendXLabels(svg, slots.Count, H, X, i => slots[i].Date);
 
         // 各系列
         for (int ci = 0; ci < cats.Length; ci++)
         {
             var color = VisualTones.ReportSeries[ci % VisualTones.ReportSeries.Length];
             var cat = cats[ci];
-            AppendSeries(svg, days.Count, i => Value(cat, days[i]), X, Y, color);
+            AppendSeries(svg, slots.Count, i => Value(cat, slots[i]), X, Y, color);
         }
 
         svg.AppendLine("</svg>");

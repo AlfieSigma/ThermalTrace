@@ -23,6 +23,19 @@ namespace ThermalTrace.Services;
 internal sealed class SamplerService : IDisposable
 {
     private const int SnapshotIntervalMinutes = 5;
+    /// <summary>连续多少拍异常后请求重建硬件监控（默认间隔 5 秒 → 约 15 秒）。</summary>
+    private const int RecoveryAfterConsecutiveErrors = 3;
+    /// <summary>重建失败后的退避秒数，避免驱动没起来时每拍去打扰硬件。</summary>
+    private const int RebuildRetrySeconds = 30;
+
+    // 【2026-11-14】恢复状态。UI 线程只置 _rebuildRequested / _suspended，
+    // 实际重建硬件一律由采样线程执行，不让两个线程同时碰 LHM 对象。
+    private int _rebuildRequested;
+    private int _consecutiveErrors;
+    private long _nextRebuildAtTicks;
+    private int _recoveryCount;
+    private volatile bool _suspended;
+    private DateTimeOffset _suspendedAt;
 
     private readonly AppSettings _settings;
     private readonly HardwareMonitor _hw;
@@ -61,6 +74,15 @@ internal sealed class SamplerService : IDisposable
     public DateTimeOffset StartedAt { get; } = DateTimeOffset.Now;
     public int SampleCount { get; private set; }
     public int ErrorCount { get; private set; }
+
+    /// <summary>当前连续失败拍数。看门狗据此区分"线程活着但没产出"与正常状态。</summary>
+    public int ConsecutiveErrors => Volatile.Read(ref _consecutiveErrors);
+
+    /// <summary>本次运行已成功重建硬件监控的次数。</summary>
+    public int RecoveryCount => Volatile.Read(ref _recoveryCount);
+
+    /// <summary>系统挂起中。挂起期间不判停摆，唤醒时由 NotePowerResume 复位。</summary>
+    public bool Suspended => _suspended;
 
     /// <summary>主温度是否已被判为不可用（恒返回 0）。界面据此给出原因，而不是显示 0.0℃。</summary>
     public bool PrimaryTempUnavailable => _tempGuard.Unavailable;
@@ -170,6 +192,70 @@ internal sealed class SamplerService : IDisposable
     }
 
     /// <summary>
+    /// 【2026-11-14】系统进入挂起：挂钟时间会在唤醒瞬间跳过整段休眠时长，
+    /// 若继续用心跳差判停摆，托盘会写一条"心跳停止 N 小时"的假证据。
+    /// </summary>
+    public void NotePowerSuspend()
+    {
+        _suspended = true;
+        _suspendedAt = DateTimeOffset.Now;
+        SamplerLog.Write("power", "系统进入挂起；挂起期间跳过停摆判定");
+    }
+
+    /// <summary>系统唤醒（或维护命令模拟唤醒）：重置心跳基准并请求重建硬件监控。</summary>
+    public void NotePowerResume(string reason)
+    {
+        _suspended = false;
+        Interlocked.Exchange(ref _lastHeartbeatTicks, DateTime.UtcNow.Ticks);
+        var gap = _suspendedAt == default ? TimeSpan.Zero : DateTimeOffset.Now - _suspendedAt;
+        SamplerLog.Write("resume",
+            $"{reason}；挂起 {(int)gap.TotalMinutes} 分钟；心跳已重置，请求重建硬件监控");
+        RequestRebuild();
+    }
+
+    /// <summary>托盘"采样状态 / 重启"等外部入口也可以请求一次重建。</summary>
+    public void RequestRecovery() => RequestRebuild();
+
+    private void RequestRebuild(bool resetBackoff = true)
+    {
+        Interlocked.Exchange(ref _rebuildRequested, 1);
+        // 连续异常再次触发时不能清掉失败退避，否则驱动没起来会每 15 秒重开一次。
+        if (resetBackoff) Interlocked.Exchange(ref _nextRebuildAtTicks, 0);
+    }
+
+    /// <summary>
+    /// 只由采样线程调用。关闭并重新打开 LHM，成功后把连续异常计数清零、
+    /// 重置主温度零读数判据（重建后旧结论不再适用）；失败按 30 秒退避重试。
+    /// </summary>
+    private void TryRebuildHardware()
+    {
+        if (Interlocked.Read(ref _nextRebuildAtTicks) > DateTime.UtcNow.Ticks) return;
+        Interlocked.Exchange(ref _rebuildRequested, 0);
+        _phase = "重建硬件监控";
+        try
+        {
+            if (_hw.TryRebuild(out var error))
+            {
+                _tempGuard.Reset();
+                Interlocked.Exchange(ref _consecutiveErrors, 0);
+                Interlocked.Exchange(ref _nextRebuildAtTicks, 0);
+                Interlocked.Increment(ref _recoveryCount);
+                SamplerLog.Write("recover", "硬件监控重建成功，采样恢复");
+                return;
+            }
+            SamplerLog.Write("error", $"硬件监控重建失败（{RebuildRetrySeconds} 秒后重试）：{error}");
+        }
+        catch (Exception ex)
+        {
+            SamplerLog.Write("error", $"硬件监控重建异常（{RebuildRetrySeconds} 秒后重试）：{ex}");
+        }
+
+        Interlocked.Exchange(ref _rebuildRequested, 1);
+        Interlocked.Exchange(ref _nextRebuildAtTicks,
+            DateTime.UtcNow.AddSeconds(RebuildRetrySeconds).Ticks);
+    }
+
+    /// <summary>
     /// 阻塞运行直到取消：采样循环 + 跨片落盘 + 定时刷新天气。
     ///
     /// 【2026-11-06】整圈循环统一包进 try：此前跨片 flush、日志、天气、推送检查都在
@@ -207,6 +293,12 @@ internal sealed class SamplerService : IDisposable
 
             while (!_cts.IsCancellationRequested)
             {
+                // 唤醒 / 连续异常留下的重建请求在这里兑现：与 Update 同一线程，
+                // 不会和正在读硬件的那一拍并发操作 LHM。
+                if (Volatile.Read(ref _rebuildRequested) == 1)
+                    TryRebuildHardware();
+
+                var completed = false;
                 try
                 {
                     _phase = "读取硬件";
@@ -244,8 +336,13 @@ internal sealed class SamplerService : IDisposable
                     var written = _agg.RowsWritten - rowsBefore;
                     if (written > 0)
                     {
-                        var file = Path.GetFileName(AppPaths.DailyFile(DateOnly.FromDateTime(DateTime.Now)));
-                        SamplerLog.Write("slice", $"已写入 {written} 行 -> {file}");
+                        // 补写的可能是跨天前的旧片（长时间休眠后第一拍常见），
+                        // 文件名必须按实际落盘的片归属日期，不能用 DateTime.Now。
+                        var day = _agg.LastFlushDay ?? DateOnly.FromDateTime(DateTime.Now);
+                        var file = Path.GetFileName(AppPaths.DailyFile(day));
+                        var sliceText = _agg.LastFlushSliceStart is { } st
+                            ? $"（片起点 {st:yyyy-MM-dd HH:mm}）" : "";
+                        SamplerLog.Write("slice", $"已写入 {written} 行 -> {file}{sliceText}");
                         ConsoleHost.WriteLine($"[info] 已写入 {written} 行 -> {file}");
                     }
 
@@ -276,18 +373,32 @@ internal sealed class SamplerService : IDisposable
                         TryScheduledPush();
                     }
 #endif
+                    completed = true;
                 }
                 catch (Exception ex)
                 {
                     // 不覆盖 _phase：停摆诊断要保留"哪一阶段出的事"。
                     ErrorCount++;
                     LastError = ex.Message;
+                    // 【2026-11-14】原先只记类型与消息，休眠唤醒后连着抛 N 次
+                    // NullReferenceException 却无法定位到具体调用。异常行现在带阶段与堆栈，
+                    // 仍按首 3 次 / 每 100 次节流，不逐拍刷日志。
+                    var streak = Interlocked.Increment(ref _consecutiveErrors);
                     if (ErrorCount <= 3 || ErrorCount % 100 == 0)
                     {
-                        SamplerLog.Write("error", $"第 {ErrorCount} 次循环异常: {ex.GetType().Name}: {ex.Message}");
+                        SamplerLog.Write("error",
+                            $"第 {ErrorCount} 次循环异常（连续 {streak} 拍，阶段={_phase}）: {ex}");
                         ConsoleHost.WriteError($"[warn] 第 {ErrorCount} 次采样失败: {ex.Message}");
                     }
+                    if (streak == RecoveryAfterConsecutiveErrors)
+                    {
+                        SamplerLog.Write("recovery", $"连续 {streak} 拍异常，请求重建硬件监控");
+                        RequestRebuild(resetBackoff: false);
+                    }
                 }
+
+                if (completed && Interlocked.Exchange(ref _consecutiveErrors, 0) >= RecoveryAfterConsecutiveErrors)
+                    SamplerLog.Write("recover", "连续异常结束，采样恢复正常");
 
                 // 心跳：只要循环转完一圈就更新；卡在 _hw.Update() 之类时不会走到这里。
                 Interlocked.Exchange(ref _lastHeartbeatTicks, DateTime.UtcNow.Ticks);
@@ -359,7 +470,7 @@ internal sealed class SamplerService : IDisposable
     /// 推出去"的误差压在一分钟内，而判定只是读个小状态文件 + 两次比较。推成之后 T 不再前进，
     /// 当天剩余检查恒为假——"已推过"天然惰性，不需要额外跳过逻辑。
     /// 【为什么必须后台】离线时重试链要走一分多钟，inline 在采样循环里会把采样堵住——
-    /// 采样数据比推送重要，这是底线。
+    /// 采样数据比推送重要，这是 §5.5 的底线。
     /// 【为什么读盘上的新 settings】启用开关 / 推送时刻都是 GUI 改的（另一个实例写盘），
     /// 本服务的 _settings 是构造时快照，不重读就永远看不到用户刚点的"启用"。
     /// </summary>

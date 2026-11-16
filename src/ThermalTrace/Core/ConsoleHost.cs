@@ -99,9 +99,9 @@ internal static class ConsoleHost
     /// 结果就是"姝ｅ湪杩炵画閲囨牱"这种乱码。必须把输出编码对齐到控制台实际代码页。
     /// 但当输出被重定向到管道/文件时应保持 UTF-8，否则写出的文件在别的工具里也是乱码。
     ///
-    /// 【2026-10-09 二次修复】此前用 GetFileType(GetStdHandle) 判定是否控制台，
+    /// 【2026-10-09 阶段A 二次修复】此前用 GetFileType(GetStdHandle) 判定是否控制台，
     /// 在 AllocConsole 新建窗口的场景下句柄判定不可靠，导致仍按 UTF-8 输出而乱码
-    /// （双击运行时看到 "ThermalTrace 鍚庡彴閲囨牱宸插惎鍔?"）。
+    /// （江珀双击运行时看到 "ThermalTrace 鍚庡彴閲囨牱宸插惎鍔?"）。
     /// 改用 .NET 的 Console.IsOutputRedirected 判定，并同步设置 Console.OutputEncoding。
     /// </summary>
     private static void RebindStreams()

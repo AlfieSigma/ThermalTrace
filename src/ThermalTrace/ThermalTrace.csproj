@@ -13,7 +13,7 @@
       只声明"允许为 win-x64 还原"，不设 RuntimeIdentifier：日常构建输出仍是与机器架构无关的
       多文件目录，发布时由脚本传 -r win-x64。这样 packages.lock.json 始终包含
       net8.0-windows7.0/win-x64 那一段，日常 build 与 publish 不会各自改写锁文件
-      （去掉全局 RuntimeIdentifier 后必须保留这一层，否则每次 build 都会删掉该段）。
+      （G08 去掉全局 RuntimeIdentifier 后必须保留这一层，否则每次 build 都会删掉该段）。
     -->
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <!--
@@ -36,9 +36,9 @@
         0.3.0 派生为 0.3.0.0；预发布标识不进入这两个字段。
       - InformationalVersion：取自 Version；发布极趣推送版时 SDK 会自动附加 commit 哈希。
       构建、发布与安装包脚本统一通过 scripts\version.ps1 读取这里，不再各写正则。
-      四段映射与安装包版本比较规则由 scripts\version.ps1 统一处理。
+      四段映射与安装包版本比较规则见 docs\versioning.md。
     -->
-    <Version>0.3.1</Version>
+    <Version>0.3.6</Version>
     <Company>AlfieSigma</Company>
     <Authors>AlfieSigma</Authors>
     <Copyright>Copyright (c) 2026 AlfieSigma</Copyright>
@@ -60,7 +60,7 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationVisualStyles>true</ApplicationVisualStyles>
     <!--
-      常驻进程 GC 策略（内存优化）。
+      常驻进程 GC 策略（阶段D 内存优化，见 docs/done/performance/memory.md 第 2 项）。
 
       .NET 的 GC 是懒的：后台常驻进程的工作集会贴着历史峰值（启动时
       JIT / LHM 全硬件枚举 / WMI 那批瞬态垃圾）只涨不落。
@@ -68,13 +68,14 @@
       代价是 GC 略频繁——本程序稳态分配率接近 0（每 5 秒一条采样），这个交换划算。
 
       这一行管"长期"，启动峰值那一下由 Core\StartupGc.cs 补（启动 30 秒后收一次）。
-      值域 0~9，默认 0；调整前应先做实测对比。
+      值域 0~9，默认 0；改这个数字之前先看 docs/done/performance/memory.md §5 的实测记录。
     -->
     <GCConserveMemory>9</GCConserveMemory>
     <!--
       【普通版构建开关】默认开启推送；publish.ps1 -Edition standard 传 -p:PushEnabled=false。
       关闭时：不定义 PUSH_ENABLED、整包排除 Push\*.cs，源码里的推送界面 / 调度 / CLI 由 #if 裁掉。
-      运行时隐藏会留下可绕过的推送路径，长期分支会让两版代码漂移，所以用构建期裁剪。
+      运行时隐藏会留下可绕过的推送路径，长期分支会让两版代码漂移，所以用构建期裁剪
+      （docs/done/misc/friend_edition_2026-11-05.md）。
     -->
     <PushEnabled Condition="'$(PushEnabled)' == ''">true</PushEnabled>
   </PropertyGroup>
@@ -90,7 +91,7 @@
   <!--
     单文件 / 自包含发布（Step S0 交付目标：一个 exe 直接双击运行，目标机无需装 .NET）
 
-    为什么带条件（日常构建不需要自包含单文件）：
+    为什么带条件（G08，docs/done/performance/global_optimization_2026-11-07.md）：
     这些属性原先在全局 PropertyGroup 里，导致日常 dotnet build 也生成自包含单文件，
     bin 与 obj 各多出上百 MB；而日常构建根本不需要这些。现在只在发布时生效：
     scripts\publish.ps1 与 scripts\smoke.ps1 都显式传 -p:SelfContained=true
@@ -111,7 +112,7 @@
 
   <ItemGroup>
     <!--
-      硬件传感器读取（MSR / EC）。唯一直接依赖。
+      S1: 硬件传感器读取（MSR / EC）。唯一直接依赖。
       注意: System.Management 由 LibreHardwareMonitorLib 传递引入（10.0.2），
       不要在此处显式声明更低的版本，否则触发 NU1605 包降级错误。
     -->

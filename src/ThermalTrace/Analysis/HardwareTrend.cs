@@ -126,7 +126,7 @@ public sealed class HardwareTrendReport
 
     /// <summary>
     /// 上一窗口（紧邻本期之前、等长）的 GPU 汇总——解读卡片的混杂因素证据要的是
-    /// 「本期 vs 上期」的对比（ΔT 涨了是灰堵了还是更常用显卡：ΔT 涨了是灰堵了还是更常用显卡）。
+    /// 「本期 vs 上期」的对比（3.4 / noncpu_signals D5：ΔT 涨了是灰堵了还是更常用显卡）。
     /// 图表只用本窗口数据，这两个字段不参与绘图。
     /// </summary>
     public double GpuHoursPrev { get; init; }
@@ -164,7 +164,7 @@ public sealed class HardwareTrendReport
 }
 
 /// <summary>
-/// 非 CPU 信号（GPU 温度 / SSD 寿命）的取数层。
+/// 非 CPU 信号（GPU 温度 / SSD 寿命）的取数层。见 <c>docs/done/gui/noncpu_signals_gui.md</c>（G1–G7）。
 ///
 /// 【为什么单独一个类而不是并进 TrendAnalyzer】TrendAnalyzer 的全部口径围绕
 /// 「单核峰值分档 + ΔT」建立，GPU 与 SSD 既没有负载档也不参与 ΔT；
@@ -183,7 +183,7 @@ public static class HardwareTrend
     /// 【权重为什么是整片 n】GPU 样本数没有单独落列（CSV 只有整片 n），只能用整片 n
     /// 近似；没用显卡的片不进分子也不进分母（空 ≠ 0℃）。
     /// 【2026-10-16 口径修正】<see cref="GpuDayStat.HoursUsed"/> 旧口径是"采到 GPU 温度
-    /// 即计入"——独显待机也报温度，该数字等于开机时长。新口径：只累计
+    /// 即计入"——独显待机也报温度，该数字在本机等于开机时长。新口径：只累计
     /// <b>负载 &gt; 0</b> 的样本，与 LiteMonitor 的「0% / 非 0」同一口径。
     /// 负载分档的日级加权用档内样本数（CSV 第 19/21/23/25/27 列落盘），
     /// 不再拿整片 n 近似——"3 个样本在 90% 档"按整片 353 个样本加权，

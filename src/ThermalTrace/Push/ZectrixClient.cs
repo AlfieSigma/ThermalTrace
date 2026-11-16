@@ -10,7 +10,7 @@ namespace ThermalTrace.Push;
 /// <c>POST /devices/{deviceId}/display/image</c>（推图到图片页副页）。
 ///
 /// 认证统一用 <c>X-API-Key</c> 请求头（形如 <c>zt_xxx</c>）。
-/// 见极趣云开放接口的设备清单。
+/// 见 <c>docs/done/eink_push/eink_push.md</c> §1 的设备接口清单。
 ///
 /// 【释放所有权】<see cref="Dispose"/> 释放的永远只有构造函数内部创建的 <see cref="HttpClient"/>；
 /// 外部注入的实例归调用方，包装释放不会动它。两个槽共用同一个包装，也就共用同一个连接池。
@@ -62,7 +62,7 @@ internal sealed class ZectrixClient : IDisposable
     /// 推一张图到指定设备的图片页副页。
     ///
     /// 【dither=false】本地已经在 <see cref="Export.EinkRenderer"/> 里手抖成 1bpp 黑白，
-    /// 再让云端二值化只会把已经调好的字再糊一遍——显式关掉，本地预览即真机所见（的核心收益）。
+    /// 再让云端二值化只会把已经调好的字再糊一遍——显式关掉，本地预览即真机所见（决策 D1 的核心收益）。
     /// 设备未到货时这一调用会返回设备不存在类错误，属预期；通道本身（鉴权 / 网络）已通过自检。
     /// </summary>
     public async Task PushImageAsync(
@@ -97,7 +97,7 @@ internal sealed class ZectrixApiException(int status, string body)
 
     /// <summary>
     /// 4xx 视为永久错误：设备标识 / 图片页 / 凭据被云端拒绝，重试多少次结果都一样。
-    /// 408 与 429 也按 4xx 处理；5xx 与网络异常才是暂时性失败。
+    /// 408 与 429 也按 4xx 处理（G04 不去猜云端限流语义）；5xx 与网络异常才是暂时性失败。
     /// </summary>
     public bool IsPermanent => StatusCode is >= 400 and < 500;
 }

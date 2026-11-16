@@ -12,13 +12,13 @@ internal sealed record SelfCheckReport(DateTimeOffset At, IReadOnlyList<DiagItem
 }
 
 /// <summary>
-/// 传感器自检（--doctor 与开机自检 --self-check 共用同一套逻辑）。
+/// 传感器自检（S1 的 --doctor / S7 的开机自检 --self-check 共用同一套逻辑）。
 ///
 /// 这套检查存在的现实原因：LiteMonitor 这类第三方工具"能显示温度"不代表读数可信。
-/// 常见机型为 Intel + 笔记本 EC 方案，常见坑有：
+/// 本机是 Tiger Lake + HP 的 EC 方案，常见坑有：
 ///  - WinRing0 驱动被安全软件拦截，导致 Package 温度全空，只有 EC 的粗值
 ///  - 绑定到了 Tctl 而非 Tdie，与 LiteMonitor 显示口径不同（能差 3~8℃）
-///  - 核显与独显双显卡，选错 GPU 温度源
+///  - MX450 与 Iris Xe 双显卡，选错 GPU 温度源
 ///  - 风扇转速传感器在某些 EC 固件下恒为 0（并非风扇没转）
 ///  - 温度量程离谱（>120℃ 或恒 0）——通常是绑定到了非温度传感器
 /// </summary>

@@ -10,7 +10,7 @@
     - Version        展示版本，原样返回，例如 0.3.0 或 0.3.0-beta.1
     - NumericVersion Windows 文件版本资源要的四段数字，0.3.0 映射为 0.3.0.0
 
-    四段映射：0.3.0 映射为 0.3.0.0；预发布标识不进入数字段。
+    四段映射与安装包版本比较规则见 docs\versioning.md。
 
 .EXAMPLE
     . .\scripts\version.ps1

@@ -4,12 +4,13 @@
 
 .DESCRIPTION
     为什么需要这一步：
-      若直接运行构建目录里的 exe，目录可能被清理，自启指向的路径会静默失效、且没有任何提示。
+      exe 原先跑在 <工作区>\publish\ 下，目录名带日期（20261009201804），
+      一旦新开工作区或清理，自启指向的路径就静默失效、且没有任何提示。
       正式安装位置固定为 %LOCALAPPDATA%\Programs\ThermalTrace\。
 
     自启为什么是计划任务而不是注册表 Run：
       程序需要管理员权限（读 MSR），Explorer 对需提权的启动项不弹 UAC、直接静默跳过，
-      HKCU Run 永远不会被启动。这是自启采用计划任务的原因。
+      HKCU Run 永远不会被启动。详见 docs\done\misc\autostart_diagnosis.md。
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File scripts\deploy.ps1
@@ -37,7 +38,7 @@ if (-not (Test-Path $src)) {
 $installDir = Join-Path $env:LOCALAPPDATA 'Programs\ThermalTrace'
 $target = Join-Path $installDir 'ThermalTrace.exe'
 
-# 正在运行的实例会锁住 exe（已知问题：publish 也常被它锁住导致挂起）
+# 正在运行的实例会锁住 exe（阶段B 已知问题：publish 也常被它锁住导致挂起）
 $running = Get-Process -Name ThermalTrace -ErrorAction SilentlyContinue
 if ($running) {
     if (-not $Force) {

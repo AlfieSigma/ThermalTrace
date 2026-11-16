@@ -35,7 +35,7 @@ internal static class Commands
         // 【B6 采样前兜底】绑定缺失时先自动推断一份再开采样。
         // 顺序很重要：必须在 SamplerService 构造之前、采样线程起来之前。
         // 未绑定时采样不会失败，只会把整片全 NaN 的行写进 CSV（读不到 id → null → OrNa），
-        // 而事后没有任何标记能把这些废数据挑出来。测试环境早已绑好，所以这个洞从没暴露过。
+        // 而事后没有任何标记能把这些废数据挑出来。开发机早就绑好了，所以这个洞从没暴露过。
         EnsureSensorBinding(settings, hw);
 
         using var sampler = new SamplerService(settings, hw);
@@ -45,22 +45,35 @@ internal static class Commands
         using var tray = new TrayIconHost(settings, sampler, single);
         tray.Start();
 
-        // 【2026-10-09 修复】双击/自启场景下 Ensure() 会 AllocConsole 弹出日志窗口，
+        // 【2026-11-14】接上电源事件：唤醒时重置心跳、请求重建硬件、刷新页面与托盘。
+        // 构造在托盘之后，此时 WinForms 同步上下文已装好，事件回调能回到 UI 线程。
+        using var power = new PowerModeWatcher(
+            single,
+            onSuspend: () => sampler.NotePowerSuspend(),
+            onResume: reason => sampler.NotePowerResume(reason),
+            refreshUi: () =>
+            {
+                MainWindowHost.RefreshVisiblePage();
+                tray.RefreshTooltipNow();
+            });
+        power.Start();
+
+        // 【2026-10-09 阶段A修复】双击/自启场景下 Ensure() 会 AllocConsole 弹出日志窗口，
         // 用户误以为需要手动关闭（关闭即退出程序）。托盘就绪后立即释放自己申请的控制台，
         // 后台常驻应是无窗口的；从终端启动时 Attach 父控制台则不动。
         ConsoleHost.ReleaseIfOwned();
 
-        // 【首次运行引导】：自启还没开 + 还没问过 → 问一次，之后不再打扰。
+        // 【C5】首次运行引导：自启还没开 + 还没问过 → 问一次，之后不再打扰。
         // 放在采样线程起来之前也没关系，真正的弹窗由内部 Timer 推到消息循环之后。
         SetupHint.MaybeShow();
 
-        // 【2026-10-09 修复】采样循环必须放在后台线程：
+        // 【2026-10-09 阶段A修复】采样循环必须放在后台线程：
         // 此前在主线程直接 sampler.Run() 会阻塞消息循环，WinForms Timer（托盘 tooltip
-        // 每 10 秒刷新）永不触发，tooltip 永远停在"等待传感器数据…"（实测）。
+        // 每 10 秒刷新）永不触发，tooltip 永远停在"等待传感器数据…"（江珀实测）。
         // 2026-11-06：线程创建收进 SamplerService.Start()，看门狗才能在异常退出后重拉。
         sampler.Start();
 
-        // 【内存优化】启动 30 秒后主动收一次瞬态垃圾（JIT / LHM 枚举 / WMI 的峰值）。
+        // 【阶段D 内存优化】启动 30 秒后主动收一次瞬态垃圾（JIT / LHM 枚举 / WMI 的峰值）。
         // .NET 的 GC 是懒的，不收这一下，启动峰值会永远贴在工作集里 —— 见 Core\StartupGc。
         StartupGc.Schedule();
 
@@ -77,6 +90,21 @@ internal static class Commands
         return 0;
     }
 
+    /// <summary>
+    /// 【2026-11-14】维护命令：向常驻实例发一次模拟唤醒，走与真实 Resume 相同的恢复链路。
+    /// 休眠问题不好复现，冒烟脚本靠它验证重建与留痕；命令本身不采样、不写 CSV。
+    /// </summary>
+    public static int SimulateResume()
+    {
+        if (!SingleInstance.SignalResume())
+        {
+            ConsoleHost.WriteLine("没有正在运行的后台实例，未发送模拟唤醒请求。");
+            return 1;
+        }
+        ConsoleHost.WriteLine("已向后台实例发送模拟唤醒请求；恢复结果见 logs\\sampler.txt 的 resume / recover 行。");
+        return 0;
+    }
+
     /// <summary>开发期验证：前台运行并打印实时状态。</summary>
     public static int Dump(ParsedCommand cmd)
     {
@@ -89,7 +117,7 @@ internal static class Commands
         using var sampler = new SamplerService(settings, hw);
 
         var start = DateTimeOffset.Now;
-        // 【2026-10-09 修复】必须用线程池定时器，不能用 WinForms Timer：
+        // 【2026-10-09 阶段A修复】必须用线程池定时器，不能用 WinForms Timer：
         // sampler.Run() 会阻塞主线程，WinForms Timer 依赖消息循环，Tick 永远不会触发。
         using var timer = new System.Threading.Timer(_ =>
         {
@@ -122,7 +150,7 @@ internal static class Commands
     ///
     /// 【为什么改用 TodaySummary】以前这里是按 10% 细档逐行等权平均，
     /// 与 CatDayStat（趋势报告口径）的 SampleCount 加权不一致，
-    /// 同一个人会在终端和 GUI 看到两个不同的数字（GUI 与终端口径一致）。
+    /// 同一个人会在终端和 GUI 看到两个不同的数字（docs/done/gui/gui_stage_c.md §2.5）。
     /// 现在终端与 GUI 卡片页走同一个 Analysis.TodaySummary，数值逐项一致。
     /// </summary>
     public static int Today()
@@ -251,14 +279,14 @@ internal static class Commands
     /// <summary>
     /// --interpret：终端打印趋势解读全文（调试用，不进 README 命令表）。
     ///
-    /// 【为什么不把 AI 解读做进程序本体】LLM 解读需要 key、需要联网、
+    /// 【为什么不把 AI 解读做进程序本体】决策 D1：LLM 解读需要 key、需要联网、
     /// 还要把温度与使用习惯数据传出本机，与项目"断网可用、零隐私上传、无外部依赖"
     /// 的一贯哲学冲突。这里输出的是<b>本地规则引擎</b>的解读全文，附一份 AI 摘要，
     /// 要不要把它粘贴给外部模型，由用户自己决定。
     ///
     /// 【为什么这里的数字与 --trend 必然一致】两者都走
     /// <c>TrendAnalyzer.Build(settings)</c> + <c>Interpreter.Build(settings, report)</c>，
-    /// 同一个引擎、同一份数字。
+    /// 同一个引擎、同一份数字（决策 D2）。
     /// </summary>
     public static int Interpret(bool onAc = true)
     {
@@ -282,13 +310,13 @@ internal static class Commands
     ///
     /// 【为什么这一步完全不联网、不需要设备】P1 的验收全靠它：排版、二值化效果、
     /// 数字对不对，在电脑上就能看完——不必等 Note 4 到货，也不必先申请 API Key。
-    /// 这也是选"全自绘"而不是交给设备渲染文字的核心收益。
+    /// 这也是选"全自绘"而不是交给设备渲染文字的核心收益（决策 D1）。
     ///
-    /// 【2026-10-16 起改走新链】：5 条负载档 ΔT + WLS 总体趋势，
+    /// 【P6 第 1 稿】2026-10-16 起改走新链：5 条负载档 ΔT + WLS 总体趋势，
     /// 不吃 Interpreter（解读不上图，图只吃 TrendReport）。旧链（A/B/C 版面）已无人使用。
     ///
-    /// 【双槽】2026-11-05 起默认两槽都出图：槽 1 近 30 天趋势图，槽 2 自清灰以来平滑图
-    /// （见推送双槽位说明）。--slot 只筛选出哪一槽；本命令始终不联网、不写推送状态。
+    /// 【双槽】2026-11-05 起默认两槽都出图：槽 1 近 30 天 v9，槽 2 自清灰以来平滑图
+    /// （见 <c>docs/done/eink_push/eink_dual_slot_2026-11-05.md</c>）。--slot 只筛选出哪一槽；本命令始终不联网、不写推送状态。
     /// </summary>
     public static int Eink(bool open, string? variant = null, string slot = "both", bool onAc = true)
     {
@@ -334,14 +362,14 @@ internal static class Commands
     }
 
     /// <summary>
-    /// 槽 1：近 30 天趋势版面（5 档 ΔT + WLS 总体趋势）。
-    /// 与推送槽 1 同一条链，一个数都不另算；数据不足时出"已积累 N 天"模板图。
+    /// 槽 1：近 30 天 v9 版面（5 档 ΔT + WLS 总体趋势）。
+    /// 与推送槽 1 同一条链，一个数都不另算；数据不足时出"已积累 N 天"模板图（决策 D7）。
     /// </summary>
     private static string EinkSlot1(AppSettings settings, Analysis.TrendReport report)
     {
         if (report.DaysWithData < Analysis.EinkSnapshotBuilder.MinDaysToDraw)
         {
-            // 模板图按天数缓存：天数没变就直接复用，一次都不重画
+            // 模板图按天数缓存：天数没变就直接复用，一次都不重画（决策 D7）
             var cached = Path.Combine(AppPaths.EinkDir, $"nodata-{report.DaysWithData}.png");
             if (File.Exists(cached))
             {
@@ -359,13 +387,13 @@ internal static class Commands
             return cached;
         }
 
-        // 5 档 ΔT + WLS 总体趋势。槽 1 的唯一版面，推送走的是同一条链。
+        // P6 v9：5 档 ΔT + WLS 总体趋势。槽 1 的唯一版面，推送走的是同一条链。
         var snap = Analysis.EinkSnapshotBuilder.Build(settings, report);
 
         var path = Path.Combine(AppPaths.EinkDir, $"p6-v9-{report.LastDay:yyyyMMdd}.png");
         File.WriteAllBytes(path,
             Export.EinkRenderer.RenderV2(snap, w => ConsoleHost.WriteLine(w), DateTime.Now));
-        ConsoleHost.WriteLine($"[OK] 槽 1 趋势图：{path}");
+        ConsoleHost.WriteLine($"[OK] 槽 1 P6 v9：{path}");
 
         ConsoleHost.WriteLine($"负载线：{snap.Lines.Count} 条（{string.Join("/", snap.Lines.Select(l => l.Name))}）"
             + $"　距清灰：{(snap.CleanDays is { } d ? d + " 日" : "未设基准日")}"

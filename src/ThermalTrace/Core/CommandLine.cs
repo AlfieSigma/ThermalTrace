@@ -18,7 +18,9 @@ internal enum CommandKind
     Push,
     Dump,
     /// <summary>--status：开机自启的真实状态 + 启动记录（不再靠"注册表写成功"判断）</summary>
-    Status
+    Status,
+    /// <summary>--simulate-resume：让常驻实例走一次唤醒恢复链路（验证用，不休眠）</summary>
+    SimulateResume
 }
 
 internal sealed class ParsedCommand
@@ -132,6 +134,9 @@ internal static class CommandLine
                 case "status":
                     kind = CommandKind.Status;
                     break;
+                case "simulate-resume":
+                    kind = CommandKind.SimulateResume;
+                    break;
                 case "reset-clean-date":
                     resetDate = Next(args, ref i, inlineValue);
                     break;
@@ -219,7 +224,7 @@ internal static class HelpText
     private const string PushHelp =
         """
           --push          把快照推到极趣 Note 4（需要 API Key；两槽各推一张图，
-                          槽 1 走近 30 天趋势图、槽 2 走自清灰以来平滑图；
+                          槽 1 走近 30 天 v9、槽 2 走自清灰以来平滑图；
                           加 --force 忽略当日幂等强制重推）
           --push --dry-run
                           推送全流程真走、只跳过 HTTP 发送（生成 PNG、写幂等状态与日志照旧），
@@ -232,6 +237,7 @@ internal static class HelpText
     private const string Tail =
         """
           --dump <分钟>    前台运行采样并打印实时状态，用于验证程序是否工作
+          --simulate-resume  向正在运行的后台实例发一次模拟唤醒（验证恢复链路，不休眠）
           --reset-clean-date <yyyy-MM-dd>   修正清灰基准日
         """;
 }

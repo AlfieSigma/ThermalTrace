@@ -26,28 +26,28 @@ public static class TrendThresholds
     /// <summary>斜率有效阈值：0.02℃/天（点数 ≥ 3 由 <see cref="TrendSlope.HasTrend"/> 保证）。</summary>
     public const double SlopeSignificant = 0.02;
 
-    /// <summary>健康度判定所需的最少数据天数。</summary>
+    /// <summary>健康度判定所需的最少数据天数（§5.2-1）。</summary>
     public const int MinDaysForJudgment = 14;
 
     /// <summary>单窗口解读（自上次清灰）的弱结论门槛：不足 7 天仍给解读，但标明仅供参考。</summary>
     public const int MinDaysForWeakConclusion = 7;
 
-    /// <summary>ΔT 差达到此值直接判 <see cref="HealthLevel.Warning"/>。</summary>
+    /// <summary>ΔT 差达到此值直接判 <see cref="HealthLevel.Warning"/>（§5.2-2）。</summary>
     public const double DeltaTWarn = 1.0;
 
-    /// <summary>K/W 差达到此值参与健康度强化/改善。</summary>
+    /// <summary>K/W 差达到此值参与健康度强化/改善（§5.2-3）。</summary>
     public const double KPerWEscalate = 0.10;
 
-    /// <summary>超 85℃ 时长差达到此值至少 <see cref="HealthLevel.Watch"/>。</summary>
+    /// <summary>超 85℃ 时长差达到此值至少 <see cref="HealthLevel.Watch"/>（§5.2-4）。</summary>
     public const double Over85WatchHours = 1.0;
 
-    /// <summary>距清灰 ΔT 上升达到此值至少 <see cref="HealthLevel.Watch"/>。</summary>
+    /// <summary>距清灰 ΔT 上升达到此值至少 <see cref="HealthLevel.Watch"/>（§5.2-5）。</summary>
     public const double CleanRiseWatch = 1.5;
 
-    /// <summary>距清灰天数门槛：衰减判定用 &gt; 30 天，月均外推展示用 ≥ 30 天。</summary>
+    /// <summary>距清灰天数门槛：衰减判定用 &gt; 30 天，月均外推展示用 ≥ 30 天（§5.2-5 / §5.6）。</summary>
     public const int CleanWatchDays = 30;
 
-    /// <summary>环境气温本期比上期高此值才入证据 / 触发 A3 归因。</summary>
+    /// <summary>环境气温本期比上期高此值才入证据 / 触发 A3 归因（§5.3 / §5.4）。</summary>
     public const double AmbientRise = 2.0;
 
     /// <summary>重载类别时长占比上升此百分点触发 A4（计划未给数值，取 5 个百分点并在此备案）。</summary>
@@ -56,13 +56,13 @@ public static class TrendThresholds
     /// <summary>GPU 使用时长本期比上期高此值触发 A7 归因（3.4）。</summary>
     public const double GpuHoursRise = 0.5;
 
-    /// <summary>证据条数上限。</summary>
+    /// <summary>证据条数上限（§5.3）。</summary>
     public const int MaxEvidence = 4;
 
-    /// <summary>建议条数上限。</summary>
+    /// <summary>建议条数上限（§5.5）。</summary>
     public const int MaxSuggestions = 4;
 
-    /// <summary>清灰衰减判定的轻微档：Rise ≥ 0.5℃。</summary>
+    /// <summary>清灰衰减判定的轻微档（§5.6）：Rise ≥ 0.5℃。</summary>
     public const double CleanRiseSlight = 0.5;
 
     /// <summary>月度外推的每月天数：与日历月无关，固定 30 天。</summary>

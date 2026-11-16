@@ -5,7 +5,7 @@ namespace ThermalTrace.UI;
 
 /// <summary>
 /// 一套配色。两套配色只允许通过 Theme.Light / Theme.Dark 取用，
-/// 不允许就地修改——否则「改了浅色忘了深色」的漂移会立刻回来（两套配色必须成对维护）。
+/// 不允许就地修改——否则「改了浅色忘了深色」的漂移会立刻回来（docs/done/gui/gui_stage_c.md §6）。
 /// </summary>
 internal sealed record ColorPalette
 {
@@ -42,11 +42,11 @@ internal sealed record ColorPalette
 /// 【为什么要有这层】
 /// WinForms 控件在 Win10 深色模式下不会自动变黑——Button/TextBox/ComboBox 读的是
 /// SystemColors，和 UWP/WinUI 那套 Immersive 色不是一回事。
-/// 所以每一个控件的 BackColor / ForeColor 都必须手动赋，
+/// 所以每一个控件的 BackColor / ForeColor 都必须手动赋（§2.3），
 /// 本类集中提供这一步，避免颜色散落各处。
 ///
 /// 【不做的事】
-/// 托盘右键菜单刻意不跟随主题：它是系统右键菜单语境，跟系统走更协调，
+/// 托盘右键菜单刻意不跟随主题（§2.4）：它是系统右键菜单语境，跟系统走更协调，
 /// 而自绘 ContextMenuStrip 要写 ToolStripRenderer，收益极低、踩坑概率极高。
 /// </summary>
 internal static class Theme
@@ -146,7 +146,7 @@ internal static class Theme
         ApplyMode(mode);
     }
 
-    /// <summary>切换主题并写回 settings.json。</summary>
+    /// <summary>切换主题并写回 settings.json（C4 设置页的下拉框接这里）。</summary>
     public static void SetMode(ThemeMode mode)
     {
         try
@@ -200,7 +200,7 @@ internal static class Theme
 
     /// <summary>
     /// 按控件类型刷色并递归。
-    /// 【为什么必须逐个类型写】WinForms 控件不会自动跟随，
+    /// 【为什么必须逐个类型写】见 §2.3：WinForms 控件不会自动跟随，
     /// 但这个体力活只能集中在这一处，别散到各个页面里。
     /// </summary>
     public static void ApplyControl(Control c)

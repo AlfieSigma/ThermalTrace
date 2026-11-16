@@ -14,23 +14,28 @@ namespace ThermalTrace.Core;
 /// 天然可以并发运行；只有 <see cref="Commands.Background"/> 获取本保护。
 ///
 /// 【为什么按数据根命名】冒烟脚本用 <c>THERMALTRACE_DATA_DIR</c> 指向临时目录，
-/// 与已有正式实例共用固定名称会互相挡住；互斥量名称带上数据根哈希后，
+/// 与本机正式实例共用固定名称会互相挡住；互斥量名称带上数据根哈希后，
 /// 只有真正共用同一份数据的进程才互斥。
 /// </summary>
 internal sealed class SingleInstance : IDisposable
 {
     private const string MutexPrefix = @"Local\ThermalTrace.SingleInstance.";
     private const string ShowEventPrefix = @"Local\ThermalTrace.ShowWindow.";
+    /// <summary>【2026-11-14】维护命令 --simulate-resume 用的唤醒事件。</summary>
+    private const string ResumeEventPrefix = @"Local\ThermalTrace.Resume.";
 
     private Mutex? _mutex;
     private EventWaitHandle? _showEvent;
+    private EventWaitHandle? _resumeEvent;
     private bool _ownsMutex;
 
-    private SingleInstance(Mutex? mutex, bool ownsMutex, EventWaitHandle? showEvent)
+    private SingleInstance(Mutex? mutex, bool ownsMutex,
+        EventWaitHandle? showEvent, EventWaitHandle? resumeEvent)
     {
         _mutex = mutex;
         _ownsMutex = ownsMutex;
         _showEvent = showEvent;
+        _resumeEvent = resumeEvent;
     }
 
     /// <summary>是否拿到了唯一实例所有权。false 表示已有一个实例在跑。</summary>
@@ -45,8 +50,10 @@ internal sealed class SingleInstance : IDisposable
         var key = KeyOf(AppPaths.Root);
         var mutexName = MutexPrefix + key;
         var showName = ShowEventPrefix + key;
+        var resumeName = ResumeEventPrefix + key;
 
-        EventWaitHandle? showEvent = TryOpenShowEvent(showName);
+        EventWaitHandle? showEvent = TryOpenEvent(showName);
+        EventWaitHandle? resumeEvent = TryOpenEvent(resumeName);
 
         Mutex mutex;
         bool createdNew;
@@ -58,22 +65,22 @@ internal sealed class SingleInstance : IDisposable
         {
             // 更高权限的实例已存在时，当前进程可能无权打开同名内核对象。
             // 无法取样总比重复采样安全：按"已有实例"处理。
-            return new SingleInstance(null, false, showEvent) { IsPrimary = false };
+            return new SingleInstance(null, false, showEvent, resumeEvent) { IsPrimary = false };
         }
 
         if (createdNew)
-            return new SingleInstance(mutex, true, showEvent) { IsPrimary = true };
+            return new SingleInstance(mutex, true, showEvent, resumeEvent) { IsPrimary = true };
 
         // 名称已存在：原进程可能仍持有，也可能已崩溃退出。WaitOne(0) 能区分这两种情况。
         try
         {
             if (mutex.WaitOne(0))
-                return new SingleInstance(mutex, true, showEvent) { IsPrimary = true };
+                return new SingleInstance(mutex, true, showEvent, resumeEvent) { IsPrimary = true };
         }
         catch (AbandonedMutexException)
         {
             // 上一个实例被强杀：当前进程接管所有权，继续作为唯一实例
-            return new SingleInstance(mutex, true, showEvent) { IsPrimary = true };
+            return new SingleInstance(mutex, true, showEvent, resumeEvent) { IsPrimary = true };
         }
         catch (UnauthorizedAccessException)
         {
@@ -81,7 +88,7 @@ internal sealed class SingleInstance : IDisposable
         }
 
         mutex.Dispose();
-        return new SingleInstance(null, false, showEvent) { IsPrimary = false };
+        return new SingleInstance(null, false, showEvent, resumeEvent) { IsPrimary = false };
     }
 
     /// <summary>请求已有实例显示主窗口。事件打开失败时静默忽略。</summary>
@@ -101,7 +108,30 @@ internal sealed class SingleInstance : IDisposable
         catch (ObjectDisposedException) { return false; }
     }
 
-    private static EventWaitHandle? TryOpenShowEvent(string name)
+    /// <summary>
+    /// 【2026-11-14】维护命令向常驻实例发一次模拟唤醒。
+    /// 只打开已存在的事件，绝不创建——没有后台实例时要如实返回 false。
+    /// </summary>
+    public static bool SignalResume()
+    {
+        var name = ResumeEventPrefix + KeyOf(AppPaths.Root);
+        try
+        {
+            if (!EventWaitHandle.TryOpenExisting(name, out var handle)) return false;
+            using (handle) handle.Set();
+            return true;
+        }
+        catch { return false; }
+    }
+
+    /// <summary>主实例的定时器消费一次模拟唤醒请求；自动重置事件会合并连点。</summary>
+    public bool ConsumeResumeRequest()
+    {
+        try { return _resumeEvent?.WaitOne(0) == true; }
+        catch (ObjectDisposedException) { return false; }
+    }
+
+    private static EventWaitHandle? TryOpenEvent(string name)
     {
         try { return new EventWaitHandle(false, EventResetMode.AutoReset, name); }
         catch { return null; }
@@ -125,5 +155,7 @@ internal sealed class SingleInstance : IDisposable
         _mutex = null;
         _showEvent?.Dispose();
         _showEvent = null;
+        _resumeEvent?.Dispose();
+        _resumeEvent = null;
     }
 }

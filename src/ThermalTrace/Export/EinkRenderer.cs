@@ -9,7 +9,7 @@ using ThermalTrace.Analysis;
 /// <summary>
 /// 把 <see cref="EinkSnapshot"/> 渲染成极趣 Note 4 能直接显示的 400×300 黑白 PNG。
 ///
-/// 【唯一版面】2026-10-17 起只剩一个版面（切角黑栏 + 切角外框 + 5 档 ΔT +
+/// 【唯一版面】2026-10-17 起只剩 P6 v9 一个版面（切角黑栏 + 切角外框 + 5 档 ΔT +
 /// WLS 趋势）。旧的 A/B/C 三套候选与它们的数据模型（<c>EinkModel</c>）已整体删除——
 /// 保留它们只会让人以为还有别的选型通道。
 ///
@@ -48,7 +48,7 @@ public static class EinkRenderer
     /// <summary>
     /// 数据不足时的模板图：固定文案 + 已积累天数。
     ///
-    /// 【为什么按天数缓存而不是每次重画】明确"不用反复重画"——
+    /// 【为什么按天数缓存而不是每次重画】决策 D7 明确"不用反复重画"——
     /// 调用方按 <c>nodata-{N}.png</c> 存文件，天数没变就直接复用，一次都不用重画。
     /// </summary>
     public static byte[] RenderNoDataPng(int days)
@@ -89,7 +89,7 @@ public static class EinkRenderer
     }
 
     // ==================================================================
-    // 趋势版面（2026-10-17 真机确认）
+    // D · P6 v9 版面（2026-10-17 江珀推真机确认，.workbuddy/p6-mockups/mockup_v9.py 为蓝本）
     //
     // 与第 1 稿的差异（都是 2026-10-17 设计讨论的结论）：
     //   切角黑栏（左「ThermalTrace 30」右「DAY n」，Bahnschrift）取代整宽反白上栏；
@@ -101,11 +101,11 @@ public static class EinkRenderer
     //   纵轴两端刻度从图区外左侧挪进图区内左上/左下（白底防压线）。
     //
     // 【Y 范围】当前按"覆盖全部数据"实现（含尖峰）。
-    //   注意：需求基线里曾有"禁止 Y 轴截断"，该基线未经确认（2026-10-17）。
-    //   该说法未经确认（2026-10-17 明确指出），不要把它当作不可改的约束。
+    //   注意：需求基线里曾有"禁止 Y 轴截断"，那是 AI 写入的、江珀从未说过（2026-10-17）。
+    //   江珀从未说过（2026-10-17 明确指出），不要把它当作不可改的约束。
     // ==================================================================
 
-    /// <summary>渲染趋势版面。32bpp 绘制 → Floyd–Steinberg → 1bpp PNG。</summary>
+    /// <summary>渲染 P6 v9 版面。32bpp 绘制 → Floyd–Steinberg → 1bpp PNG，管线与 A/B/C 相同。</summary>
     public static byte[] RenderV2(
         EinkSnapshot snapshot, Action<string>? warn = null, DateTime? renderedAt = null)
     {
@@ -125,7 +125,7 @@ public static class EinkRenderer
         return EncodePng(bmp, warn);
     }
 
-    // ---------- 趋势版面常量（改这里等于改图）----------
+    // ---------- v9 版面常量（与 mockup_v9.py 一一对应，改这里等于改图）----------
     private const string BrandFont = "Bahnschrift";
     private const string MonoFont = "Consolas";
 
@@ -133,7 +133,7 @@ public static class EinkRenderer
     /// 建字体的唯一入口——**必须显式给 <see cref="GraphicsUnit.Pixel"/>**。
     ///
     /// 【坑】<c>new Font(name, 25f)</c> 的重载默认单位是 **Point**（1/72 英寸），
-    /// 96 DPI 下 25f = 33 像素。而设计稿里的 25 是真 25 像素——差 33%，
+    /// 96 DPI 下 25f = 33 像素。而 mockup 里的 25 是真 25 像素——差 33%，
     /// 表现为"字比设计稿大很多、顶到栏外"。
     /// </summary>
     private static Font Px(string name, float size) =>
@@ -152,7 +152,7 @@ public static class EinkRenderer
     private const float TagX = 342f;
     private const int DotSize = 4;          // 孤点边长
     private const float DataLineWidth = 2f; // 5 条 ΔT 线，等宽
-    private const float TrendLineWidth = 2f;// 趋势线（1px 经 FS 抖动后看不清，实测要求 2px）
+    private const float TrendLineWidth = 2f;// 趋势线（1px 经 FS 抖动后看不清，江珀 03:57 要求 2px）
     private const int TrendBoxSize = 9;     // 趋势标签实心方块
 
     private static void DrawFiveLine(Graphics g, EinkSnapshot snap, DateTime? renderedAt = null)
@@ -160,7 +160,7 @@ public static class EinkRenderer
         if (!DrawFurniture(g, snap, snap.SpanDays.ToString(), renderedAt)) return;
 
         // ---------- 5 条 ΔT 线：等宽 2px；每个有效日都画孤点，相邻两日都有才连线 ----------
-        // 孤点是数据不是噪点（满载一天只有几分钟是真实的使用情况）
+        // 孤点是数据不是噪点（江珀 2026-10-17：满载一天只有几分钟是真实的使用情况）
         var scale = new PlotScale(snap);
         DrawSeries(g, snap, scale, drawDots: true);
         DrawTrend(g, snap, scale);
@@ -207,7 +207,7 @@ public static class EinkRenderer
 
         // ---------- 切角外框：2px 描边，不用"外填黑 + 内缩填白" ----------
         // 【为什么】切角矩形的内缩多边形在斜角处与外轮廓**不平行**，角部边框厚度只有
-        // 1.41px，FS 抖动后断成虚线（实测会出现实线断开）。
+        // 1.41px，FS 抖动后断成虚线（江珀 2026-10-17 实测"外框线怎么都不是实线了"）。
         // 描边的厚度沿整条路径恒为 FrameStroke，没有这个问题。
         using (var framePen = new Pen(Color.Black, FrameStroke))
         using (var framePath = new GraphicsPath())
@@ -235,7 +235,7 @@ public static class EinkRenderer
     /// <summary>
     /// 图区 Y/X 映射。Y 范围用**实际极值**、不加 padding：
     /// 原实现上下各留 8%，实际最小 2.4℃ 被压到 0，轴标显示 "0.0"，
-    /// 看起来像在宣称"0 是有效下限"（应使用实际值）。
+    /// 看起来像在宣称"0 是有效下限"（江珀 2026-10-17：要用实际值）。
     /// 只在跨度退化到画不出东西时才兜底——5 档分层的数据跨度远大于 3℃，正常不触发。
     /// </summary>
     private readonly struct PlotScale
@@ -343,7 +343,7 @@ public static class EinkRenderer
     {
         // 固定 12px：槽 2 数据积累多时会出现四位小时数（如 5·9999h）。
         // 最坏串墨迹宽 46px、起点相对绘制原点再右移 3px，TagX=342 时右缘 390，
-        // 距离外框 2px 描边（393 起）还有 2px；14px 时同串会压到框外（2026-11-7 修正）。
+        // 距离外框 2px 描边（393 起）还有 2px；14px 时同串会压到框外（2026-11-7 江珀指出）。
         var labels = new List<(float Y, string? Text)>();
         for (int li = 0; li < snap.Lines.Count; li++)
         {
@@ -390,9 +390,9 @@ public static class EinkRenderer
     // ==================================================================
     // 槽 2 · 自清灰以来平滑版面（v1.2）
     //
-    // 与趋势版面的差异只在数据层：不叠原始日点、不做等宽桶，5 条线按日历日连续排布，
+    // 与 v9 的差异只在数据层：不叠原始日点、不做等宽桶，5 条线按日历日连续排布，
     // 画居中加权平滑值；另固定画一条池化加权预测线（虚线 + 右端 9×9 实心方块）。
-    // 黑栏、外框、时间戳、纵轴、右缘标签沿用趋势版面常量，槽 1 输出不变。
+    // 黑栏、外框、时间戳、纵轴、右缘标签沿用 v9 常量，槽 1 输出不变。
     // ==================================================================
     private static void DrawSlot2(Graphics g, EinkSnapshot snap, DateTime? renderedAt = null)
     {
@@ -426,7 +426,7 @@ public static class EinkRenderer
     ///
     /// 【为什么不进图区】2026-11-7 之前画在图区内部（y=240）且带白底，会切断最低一条
     /// ΔT 线，单独一个「11」浮在线间还会被误读成数据标签。
-    /// 【为什么不另开刻度条】把图区压矮再往下排一行等于给一张图做两条基线。要求
+    /// 【为什么不另开刻度条】把图区压矮再往下排一行等于给一张图做两条基线。江珀要求
     /// 刻度贴着坐标框本身：字跨在 <see cref="FrameBox"/> 的底线上，白底只挖掉这一段框线。
     /// 图区底边 266 与框线 272 之间留 6px，11px 雅黑「11月」墨迹高 10px，上缘约 267，仍在图区之外。
     /// </summary>
@@ -463,7 +463,7 @@ public static class EinkRenderer
     }
 
     /// <summary>
-    /// 推送时刻。这是判断"推送是否成功 / 数据代表何时"的唯一依据，
+    /// 推送时刻。江珀：这是判断"推送是否成功 / 数据代表何时"的唯一依据，
     /// 因此是全图最重要的信息——放在图框外右下，字号 15px（比黑栏里的字更大）。
     /// </summary>
     private static void DrawTimeStamp(Graphics g, EinkSnapshot snap, DateTime? renderedAt)
@@ -514,7 +514,7 @@ public static class EinkRenderer
     /// 按**墨迹** bbox 垂直居中绘制（黑栏反白字专用），返回墨迹宽度便于串接。
     ///
     /// 【坑】不要用 <c>MeasureString</c> 的字符格高度估算——它含 ascent/descent，
-    /// 在 34px 高的黑栏里会把字顶出栏外（早期设计稿第一版就是这么翻车的）。
+    /// 在 34px 高的黑栏里会把字顶出栏外（Python mockup 第一版就是这么翻车的）。
     /// 必须用 <c>MeasureCharacterRanges</c> 拿真实墨迹。
     /// </summary>
     private static float DrawStringVCenter(
@@ -530,7 +530,7 @@ public static class EinkRenderer
         using var sf = (StringFormat)StringFormat.GenericTypographic.Clone();
         // 【坑】StringFormat 默认 LineAlignment=Center，于是 MeasureCharacterRanges 返回的
         // bounds.Top 是"整行在测量区里居中之后"的 y（400×300 画布上约 135），而不是墨迹
-        // 相对字符格顶部的偏移。直接拿去算居中位置，字会被推到栏外（实测）。
+        // 相对字符格顶部的偏移。直接拿去算居中位置，字会被推到栏外（江珀 03:57 实测）。
         sf.LineAlignment = StringAlignment.Near;
         sf.SetMeasurableCharacterRanges(new[] { new CharacterRange(0, s.Length) });
         var ranges = g.MeasureCharacterRanges(s, f, new RectangleF(0, 0, Width, Height), sf);

@@ -156,7 +156,7 @@ if ($Edition -eq 'standard') {
     Write-Host '  4) 首次启动弹一次 UAC（程序清单 requireAdministrator，预期行为）'
     Write-Host '  5) 卸载不弹 UAC；卸载后临时目录与卸载项都应消失'
 } else {
-    Write-Host '极趣推送版实测清单:' -ForegroundColor Yellow
+    Write-Host '极趣推送版实测清单（B7 阶段要在一台干净机器上走完）:' -ForegroundColor Yellow
     Write-Host '  1) 双击安装，确认安装过程不弹 UAC；勾选自启时才会弹一次'
     Write-Host '  2) 桌面/开始菜单出现「ThermalTrace 极趣推送版（Zectrix）」图标'
     Write-Host '  3) 启动时弹 UAC，选择''是''后托盘出现温度曲线图标'

@@ -9,7 +9,7 @@ namespace ThermalTrace.Analysis;
 /// 单日、单个展示类别的卡片数据（今日概览的一张大卡片）。
 ///
 /// 【缺失一律是 NaN】展示层据此渲染「—」。绝不能把缺失填成 0——
-/// 「0℃」会被读成"凉快"，「—」才是"没采到"（取值规则）。
+/// 「0℃」会被读成"凉快"，「—」才是"没采到"（docs/done/gui/gui_stage_c.md §C2 取值规则）。
 /// </summary>
 internal sealed record TodayCardData(
     int Category,
@@ -104,7 +104,7 @@ internal sealed record TodaySummaryData(
     /// <summary>GPU 行文案。GUI 页脚与 CLI <c>--today</c> 打印同一串（G4 同源同值）。</summary>
     /// <remarks>
     /// 2026-10-16 口径修正：「使用」从此是<b>负载 &gt; 0</b> 的时长（与 LiteMonitor 的
-    /// 「0% / 非 0」同一口径），不再是"采到温度即计入"——后者等于开机时长。
+    /// 「0% / 非 0」同一口径），不再是"采到温度即计入"——后者在本机等于开机时长。
     /// 负载完全没采到时明说，不把"没采到"演成"使用 0h"。
     /// </remarks>
     public string GpuText
@@ -160,11 +160,11 @@ internal sealed record TodaySummaryData(
 /// 【为什么不自己写加权】这里直接复用 <see cref="CatDayStat"/>（<c>--trend</c> / HTML 报告
 /// 用的就是它），因为加权口径必须与趋势报告完全一致：
 /// 同一个人在卡片页看到 55.8℃、在趋势报告里看到 54.9℃，数据可信度就没了
-/// （口径约定第 1 条）。CatDayStat.Add 是按 <see cref="SliceRow.SampleCount"/> 加权的，
-/// 遗留的 MainWindowHost.BuildTodaySummary 是每行等权平均——那正是要修的 bug。
+/// （docs/architecture.md「口径约定」第 1 条）。CatDayStat.Add 是按 <see cref="SliceRow.SampleCount"/> 加权的，
+/// 阶段 B 遗留的 MainWindowHost.BuildTodaySummary 是每行等权平均——那正是 §2.5 要修的 bug。
 ///
 /// 【不做的事】不碰 CSV、不缓存、不做实时刷新。每次调用都重读当日文件，
-/// 保证"设置页改了桶边界 → 切回来立即重算"。
+/// 保证"设置页改了桶边界 → 切回来立即重算"（§2.7）。
 /// </summary>
 internal static class TodaySummary
 {

@@ -4,12 +4,12 @@ using ThermalTrace.Model;
 namespace ThermalTrace.UI;
 
 /// <summary>
-/// 首次运行引导：只在"程序还没开自启"的时候问一句，帮助用户把自启一次打开。
+/// 首次运行引导（C5）：只在"程序还没开自启"的时候问一句，帮江珀把自启一次打开。
 ///
 /// 【为什么要这个东西】
 /// 自启是本项目唯一的价值前提 —— 没有连续数据，"现在比一个月前热了多少"就无从回答
-/// （产品边界）。但注册它需要一个"先想起来要开"的动作：
-/// 日常使用通常不开终端，而设置页又需要用户先想到去点。所以第一次运行时当面问一次，
+/// （docs/project.md 红线 R4）。但注册它需要一个"先想起来要开"的动作：
+/// 江珀日常不开终端，而设置页又要他先想到去点。所以第一次运行时当面问一次，
 /// 之后不再打扰。
 ///
 /// 【只问一次】
@@ -18,7 +18,7 @@ namespace ThermalTrace.UI;
 ///
 /// 【失败必须原样给用户看】
 /// 未提权时 <c>AutoStart.Enable()</c> 返回失败并带原因，这里弹红色错误框把原因原样贴出，
-/// 与设置页开关遵循同一规则。
+/// 与设置页开关走同一条红线（docs/done/gui/gui_stage_c.md §C4 / docs/project.md 红线 R4）。
 /// </summary>
 internal static class SetupHint
 {
@@ -89,7 +89,7 @@ internal static class SetupHint
         }
 
         // 原样把原因给用户，绝不像旧实现那样"没抛异常就当成功"
-        // （自启的真实状态）
+        // （docs/troubleshooting.md「自启的真实四态」）
         MessageBox.Show(
             "注册开机自启失败\n\n" + result.Message,
             "ThermalTrace", MessageBoxButtons.OK, MessageBoxIcon.Error);

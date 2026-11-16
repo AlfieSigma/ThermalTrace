@@ -83,7 +83,7 @@ public sealed record UiOptions
     public double AlertTempC { get; init; } = 85;
 
     /// <summary>
-    /// 首次运行引导。true 时程序第一次起来会问一句"要不要现在开开机自启"；
+    /// 首次运行引导（C5）。true 时程序第一次起来会问一句"要不要现在开开机自启"；
     /// 问完（选是或选否）即落盘为 false，不再打扰。
     /// 见 <c>UI/SetupHint.cs</c>。
     /// </summary>
@@ -99,15 +99,15 @@ public sealed record UiOptions
     public bool ShowTrayHint { get; init; } = true;
 
     /// <summary>
-    /// 主题模式。默认跟随系统「默认应用模式」。
-    /// 强制浅/深只在用户明确要求时才用——设置页下拉框写这里。
+    /// 主题模式（C0 决策 D1）。默认跟随系统「默认应用模式」。
+    /// 强制浅/深只在用户明确要求时才用——设置页下拉框写这里（C4 接线）。
     /// </summary>
     public ThemeMode ThemeMode { get; init; } = ThemeMode.Follow;
 
     /// <summary>
-    /// 主窗口上次关闭时的位置与大小。
+    /// 主窗口上次关闭时的位置与大小（C5）。
     /// <c>WindowWidth</c> / <c>WindowHeight</c> 为 0 表示"还没记过"，
-    /// 此时窗口按 900×600 + 屏幕居中打开。
+    /// 此时窗口按 900×600 + 屏幕居中打开（D4）。
     /// X / Y 可能为负——多显示器下主屏左边的屏就是负坐标，不能用 0 当"未设置"。
     /// </summary>
     public int WindowX { get; init; }
@@ -138,7 +138,7 @@ public sealed record PushOptions
     /// <summary>设备 MAC，形如 AA:BB:CC:DD:EE:FF。来自 <c>GET /devices</c> 返回。</summary>
     public string DeviceId { get; init; } = "";
 
-    /// <summary>槽 1（近 30 天趋势图）的图片页槽位 1–5（持久化存储，不打扰待办主页）。</summary>
+    /// <summary>槽 1（近 30 天 v9 图）的图片页槽位 1–5（持久化存储，不打扰待办主页）。</summary>
     public string PageId { get; init; } = "1";
 
     /// <summary>槽 2（自清灰以来平滑图）的图片页槽位 1–5，默认 <c>"2"</c>。与 <see cref="PageId"/> 相同则槽 2 跳过。</summary>

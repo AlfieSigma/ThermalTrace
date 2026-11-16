@@ -6,7 +6,7 @@ namespace ThermalTrace.Storage;
 
 /// <summary>
 /// SSD 寿命计数器的读写（<c>health\ssd.csv</c>，一天一行）。
-/// 见非 CPU 信号说明。
+/// 见 <c>docs/done/analysis_caliber/noncpu_signals.md</c> D3/D4。
 ///
 /// 【为什么单独一个目录而不是并进 daily\】
 /// <c>daily\</c> 下的文件是"每 30 分钟 × 每负载档"的切片行，而

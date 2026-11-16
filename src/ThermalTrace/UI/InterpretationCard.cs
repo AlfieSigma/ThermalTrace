@@ -61,7 +61,7 @@ internal sealed class HealthChip : BufferedPanel
 }
 
 /// <summary>
-/// 解读内容面板（原趋势页的底部卡片，2026-11-4 起挂在独立的「解读」标签页）。
+/// 解读内容面板（原 B2 的底部卡片，2026-11-4 起挂在独立的「解读」标签页）。
 /// 内容由分析层的 <see cref="Interpreter"/> 一次算好（<see cref="InterpretationReport"/>），
 /// 本类只负责排版与刷色，一个数都不自己算——GUI / 页脚 / <c>--trend</c> 同源同值的前提正在于此。
 ///
@@ -120,7 +120,7 @@ internal sealed class InterpretationCard : CardPanel
         _copy.Click += OnCopyClicked;
     }
 
-    /// <summary>健康度着色：良好=Cool、关注=Warm、注意=Hot、数据不足=TextDim。</summary>
+    /// <summary>健康度着色：良好=Cool、关注=Warm、注意=Hot、数据不足=TextDim（计划 §6-B2.3）。</summary>
     internal static Color HealthColor(HealthLevel level)
     {
         var p = Theme.Current;
@@ -188,7 +188,7 @@ internal sealed class InterpretationCard : CardPanel
 
     /// <summary>
     /// 归因每条拆三行：假设（带置信度）→ 依据 → 验证方法。
-    /// 拆开是为了让"验证方法"一眼可见——要求归因可证伪，
+    /// 拆开是为了让"验证方法"一眼可见——决策 D7 要求归因可证伪，
     /// 挤成一行它就会被当成结论而不是假设。
     /// </summary>
     private void AddAttributions(IReadOnlyList<AttributionItem> items)
@@ -209,7 +209,7 @@ internal sealed class InterpretationCard : CardPanel
     private void AddSectionTitle(string text)
     {
         // 用既有的 SectionLabel：它自带粗体标题与分隔线，且字体在 OnPaint 里临时 new + using，
-        // 不需要持有 Font 对象——少一个"应用层面卡住了才敢 Dispose"的负担。
+        // 不用我们持有 Font 对象——少一个"应用层面卡住了才敢 Dispose"的负担。
         _content.Controls.Add(new SectionLabel
         {
             Text = text,

@@ -8,7 +8,7 @@ namespace ThermalTrace.Core;
 /// 【为什么必须手写】
 /// .NET 8 没有 Application.SetColorMode(SystemColorMode)（那是 .NET 9/10 的 API），
 /// net8.0-windows 下也不存在任何官方深色模式开关。整套主题只能自己读注册表 + 自己刷色。
-/// 见主题处理约定。
+/// 见 docs/done/gui/gui_stage_c.md §2.1 / §2.2。
 ///
 /// 【Win10 上读什么】
 /// HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize
@@ -23,7 +23,7 @@ internal static class SystemTheme
     /// <summary>
     /// 系统「默认应用模式」是否为浅色。
     /// 【默认值必须是 true】某些优化软件会删掉这个键值，
-    /// 读不到时按深色处理会让用户莫名得到一个黑窗口（主题处理约定）。
+    /// 读不到时按深色处理会让用户莫名得到一个黑窗口（docs/done/gui/gui_stage_c.md §2.2）。
     /// </summary>
     public static bool IsLightAppTheme()
     {

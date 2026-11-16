@@ -9,7 +9,7 @@ namespace ThermalTrace.UI.Charts;
 internal sealed record UsageCell(string Name, Color Color, double Hours, long Samples);
 
 /// <summary>
-/// 趋势页的分档时长条带：一行环境摘要 + 一条按占比划分的分段条 + 五格明细。
+/// 趋势页的分档时长条带（§2-5）：一行环境摘要 + 一条按占比划分的分段条 + 五格明细。
 ///
 /// 【为什么自绘】五格要同时放下档名、占比、时长、样本数，且 760×520 下每格只有约 130px；
 /// 五个 Label 拼起来必然出现某一格先截断、另一格还是大字。

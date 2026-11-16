@@ -62,7 +62,7 @@ public sealed record LoadContext(
     double TotalCpuUtilPct,
     /// <summary>
     /// 单个物理核心的最高利用率（%）。★伴随记录最关键的字段。
-    /// 4 核 8 线程的 Intel CPU 上，任务管理器显示 50% 极可能是 2 核跑满。
+    /// i5-1135G7 是 4 核 8 线程，任务管理器显示 50% 极可能是 2 核跑满。
     /// 只记总利用率会把"双核满载"误判为"中等负载"，清灰效果永远解释不清。
     /// </summary>
     double MaxCoreUtilPct,

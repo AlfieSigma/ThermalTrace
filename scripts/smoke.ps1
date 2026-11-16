@@ -9,36 +9,36 @@
     【绝对不能放进来的命令】
       --bind      → 交互式传感器绑定向导，会等待控制台输入
       --dump <分> → 前台采样直到指定分钟数才退出，耗时不可控
-    无参数（后台常驻）只在受控条件下才会由这组检查启动：独立临时数据根、
+    无参数（后台常驻）只有阶段 E 在受控条件下会启动：独立临时数据根、
     进程按 PID 精确结束，绝不用 /IM 或 Stop-Process -Name 杀全部实例。
     其余场景仍必须人工手动验证。
 
-    【/ E 覆盖什么】
+    【阶段 D / E 覆盖什么】
       D：--trend / --eink 的产物真的落盘且非空（退出码 0 不等于文件写出来了）。
       E：真启动一次后台常驻实例，模拟托盘双击打开主窗口，用 UI 自动化断言
          "主窗口可见、四个页签名称正确且可切换、控件与关键文本存在"，
          并断言启动时补写的当日 CSV 与 logs\sampler.txt 的本次启动记录。
-         GUI 检查始终使用独立的临时数据根（%TEMP%\ThermalTrace-smoke-gui-<随机>），
+         GUI 阶段始终使用独立的临时数据根（%TEMP%\ThermalTrace-smoke-gui-<随机>），
          即使加 -UseRealData 也不读写真实目录；因为真实实例通常正在运行，
          第二个实例碰同一份快照会互相覆盖。
-      E 的前置条件：测试机至少有一个可读温度传感器（非提权副本读 GPU 温度即可）。
+      E 的前置条件：本机至少有一个可读温度传感器（非提权副本读 GPU 温度即可）。
       读不到任何温度时 Commands.Background 会直接退出 1，E1 会明确报出来。
 
     【为什么要单独构建免提权副本】
     app.manifest 是 requireAdministrator，正式 exe 每跑一次就弹一次 UAC。
-    自动化里弹 UAC 会卡住，所以用 -p:NoElevation=true 另建一个诊断副本。
-    注意该副本读不到 MSR，传感器相关输出必然为空——所以只记录不断言。
+    自动化里弹 UAC 会卡住，所以阶段 A 用 -p:NoElevation=true 另建一个诊断副本。
+    注意该副本读不到 MSR，传感器相关输出必然为空——所以阶段 C 只记录不断言。
 
-    【需要管理员】
+    【阶段 B 需要管理员】
     计划任务是以最高权限创建的，创建与删除都需要管理员。
-    非提权运行时自动 SKIP，并提示如何补跑。
+    非提权运行时阶段 B 自动 SKIP，并提示如何补跑。
 
     【数据目录隔离与严格模式】
     默认把 THERMALTRACE_DATA_DIR 指到 %TEMP%\ThermalTrace-smoke-<随机>，
-    /C 的 CLI 子进程都写在这个临时目录里，运行前后不读写真实的
+    阶段 A/C 的 CLI 子进程都写在这个临时目录里，运行前后不读写真实的
     %LOCALAPPDATA%\ThermalTrace。临时目录在脚本结束时清理。
-    只有显式加 -UseRealData 才使用真实目录。的 --install 会由计划任务
-    拉起实例，该实例不继承脚本的环境变量，所以隔离模式下直接 SKIP。
+    只有显式加 -UseRealData 才使用真实目录。阶段 B 的 --install 会由计划任务
+    拉起实例，该实例不继承脚本的环境变量，所以隔离模式下阶段 B 直接 SKIP。
 
     严格模式默认开启（发现任何 SKIP 即视为未通过）；加 -NonStrict 恢复旧语义（SKIP 不计失败）。
 
@@ -58,7 +58,7 @@ param(
     # 强制重建免提权诊断副本
     [switch]$Rebuild,
 
-    # 只跑（自启生命周期），其余全部跳过
+    # 只跑阶段 B（自启生命周期），其余全部跳过
     [switch]$OnlyAdmin,
 
     # 使用真实数据目录 %LOCALAPPDATA%\ThermalTrace（默认使用隔离临时目录）
@@ -97,7 +97,7 @@ if ($UseRealData) {
 # 严格模式默认开启：任何 SKIP 都算未通过，避免"全跳过却显示通过"。
 $strict = -not [bool]$NonStrict
 
-# GUI 实例与产物目录都用各自的临时数据根，不碰上面的 $dataRoot。
+# 阶段 E 的 GUI 实例与阶段 D 的产物目录都用各自的临时数据根，不碰上面的 $dataRoot。
 $script:guiDataRoot = $null
 $script:artifactRoot = $null
 
@@ -151,8 +151,8 @@ function Invoke-Native {
         schtasks 查不到任务、taskkill 杀不存在的进程，都会把错误写到 stderr。
         而 $ErrorActionPreference='Stop' 会把这类 stderr 输出升级成 terminating error
         直接中断整个脚本。可"任务不存在""进程没在跑"恰恰是本脚本要验证的正常结果——
-        最后一项就是靠确认 schtasks 查询返回非 0 来判定任务已删除。
-        第一次跑这组检查时就是这么崩的：前三项全 PASS，最后一项却因为脚本自己挂掉而没跑成。
+        B4 就是靠确认 schtasks 查询返回非 0 来判定任务已删除。
+        第一次跑阶段 B 时就是这么崩的：B1~B3 全 PASS，B4 却因为脚本自己挂掉而没跑成。
     #>
     param([string]$FilePath, [string[]]$Arguments)
 
@@ -207,7 +207,7 @@ if (-not $OnlyAdmin) {
             -p:EnableCompressionInSingleFile=true | Out-Null
 
         if ($LASTEXITCODE -ne 0) {
-            Write-Host '[ERR] 免提权副本构建失败，/C 无法进行' -ForegroundColor Red
+            Write-Host '[ERR] 免提权副本构建失败，阶段 A/C 无法进行' -ForegroundColor Red
             Clear-IsolatedData
             exit 2
         }
@@ -217,9 +217,9 @@ if (-not $OnlyAdmin) {
         Write-Host '[准备] 复用已有的免提权副本（加 -Rebuild 可强制重建）' -ForegroundColor DarkGray
     }
 
-    # ============ ：可断言的免提权路径 ============
+    # ============ 阶段 A：可断言的免提权路径 ============
     Write-Host ''
-    Write-Host '--- / 命令行路径（免提权副本）---' -ForegroundColor Cyan
+    Write-Host '--- 阶段 A / 命令行路径（免提权副本）---' -ForegroundColor Cyan
 
     # A1 --status：纯查询，不该有任何副作用
     $r = Invoke-Exe $smokeExe @('--status')
@@ -247,34 +247,34 @@ if (-not $OnlyAdmin) {
         $(if ($okA4) { 'PASS' } else { 'FAIL' }) `
         $(if ($okA4) { "退出码 $($r.Code)" } else { "退出码 $($r.Code)，期望 0 或 1" })
 
-    # ============ 真实路径：只记录不断言 ============
+    # ============ 阶段 C：真实路径，只记录不断言 ============
     Write-Host ''
-    Write-Host '--- 真实路径（免提权读不到传感器，只验证不崩溃）---' -ForegroundColor Cyan
+    Write-Host '--- 阶段 C / 真实路径（免提权读不到传感器，只验证不崩溃）---' -ForegroundColor Cyan
 
     $cases = @(
-        @{ Id = '1'; Args = @('--self-check'); Name = '--self-check 不崩溃' },
-        @{ Id = '2'; Args = @('--today'); Name = '--today 不崩溃' },
-        @{ Id = '3'; Args = @('--trend', '--no-open'); Name = '--trend --no-open 不崩溃' }
+        @{ Id = 'C1'; Args = @('--self-check'); Name = '--self-check 不崩溃' },
+        @{ Id = 'C2'; Args = @('--today'); Name = '--today 不崩溃' },
+        @{ Id = 'C3'; Args = @('--trend', '--no-open'); Name = '--trend --no-open 不崩溃' }
     )
     foreach ($c in $cases) {
         $r = Invoke-Exe $smokeExe $c.Args
         # 允许的退出码：0 正常 / 1 自检未通过或未处理异常 / 740 权限不足。
         # 【为什么 1 也算通过】--self-check 在读不到传感器时本来就返回 1，
         # 而 Program.cs 对未处理异常也返回 1，两者用退出码无法区分。
-        # 所以只能兜住"卡死 / 异常退出"这类硬故障，
+        # 所以阶段 C 只能兜住"卡死 / 异常退出"这类硬故障，
         # 真正的传感器是否可用只能靠 B7 在干净机上人工看数值。
         $ok = ($r.Code -eq 0 -or $r.Code -eq 1 -or $r.Code -eq 740)
         Add-Result $c.Id $c.Name $(if ($ok) { 'PASS' } else { 'FAIL' }) "退出码 $($r.Code)"
     }
 
-    # ============ ：CLI 产物 ============
+    # ============ 阶段 D：CLI 产物 ============
     # 退出码 0 只说明"命令没崩"，不代表文件真的写出来了。
     # 注意两处命名/缓存碰撞：--trend 的报告名精确到分钟（trend-yyyyMMdd-HHmm.html），
-    # 同一分钟内两项检查会撞同名文件；--eink 的 nodata-{N}.png 命中"天数没变就复用"，
+    # 同一分钟内 C3 与 D1 会撞同名文件；--eink 的 nodata-{N}.png 命中"天数没变就复用"，
     # 同目录重复跑不会重写。因此 D 用一份全新的空数据根，按"目录里出现非空产物"判定，
     # 与前序用例、文件名、缓存彻底解耦，也不往真实目录写报告或 PNG。
     Write-Host ''
-    Write-Host '--- / CLI 产物 ---' -ForegroundColor Cyan
+    Write-Host '--- 阶段 D / CLI 产物 ---' -ForegroundColor Cyan
 
     $script:artifactRoot = Join-Path ([IO.Path]::GetTempPath()) `
         ('ThermalTrace-smoke-artifacts-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -294,7 +294,7 @@ if (-not $OnlyAdmin) {
                 Sort-Object Name
         )
         $okD1 = ($r.Code -eq 0) -and ($reportArts.Count -ge 1)
-        Add-Result '1' '--trend 生成非空 HTML 报告' `
+        Add-Result 'D1' '--trend 生成非空 HTML 报告' `
             $(if ($okD1) { 'PASS' } else { 'FAIL' }) `
             $(if ($okD1) { "$($reportArts[0].Name) / $($reportArts[0].Length) 字节（共 $($reportArts.Count) 个）" }
               else { "退出码 $($r.Code)；空数据根下未产生非空 HTML" })
@@ -306,7 +306,7 @@ if (-not $OnlyAdmin) {
                 Sort-Object Name
         )
         $okD2 = ($r.Code -eq 0) -and ($einkArts.Count -ge 1)
-        Add-Result '2' '--eink 生成非空 PNG' `
+        Add-Result 'D2' '--eink 生成非空 PNG' `
             $(if ($okD2) { 'PASS' } else { 'FAIL' }) `
             $(if ($okD2) { "$($einkArts[0].Name) / $($einkArts[0].Length) 字节（共 $($einkArts.Count) 个）" }
               else { "退出码 $($r.Code)；空数据根下未产生非空 PNG" })
@@ -314,12 +314,12 @@ if (-not $OnlyAdmin) {
         $env:THERMALTRACE_DATA_DIR = $previousDataDir
     }
 
-    # ============ GUI 与启动落盘 ============
+    # ============ 阶段 E：GUI 与启动落盘 ============
     # 说明见脚本头注释。核心难点：后台常驻启动时主窗口是隐藏的，只有托盘双击才 Show()。
     # 这里向本进程（按 PID 过滤）的 NotifyIcon 隐藏窗口投递一次回调消息，模拟托盘双击；
     # 之后全部用 UI 自动化读页签，不做像素比对。
     Write-Host ''
-    Write-Host '--- GUI 与启动落盘 ---' -ForegroundColor Cyan
+    Write-Host '--- 阶段 E / GUI 与启动落盘 ---' -ForegroundColor Cyan
 
     $guiCases = [ordered]@{
         'E1' = '主窗口出现并可见'
@@ -328,6 +328,7 @@ if (-not $OnlyAdmin) {
         'E4' = '四个页签可切换'
         'E5' = '当日 CSV 增长'
         'E6' = 'sampler.txt 有本次启动记录'
+        'E7' = '模拟唤醒走完重建并留下 resume / recover 记录'
     }
 
     function Add-MissingGuiCases([string]$reason) {
@@ -635,11 +636,49 @@ if (-not $OnlyAdmin) {
             Add-Result 'E6' $guiCases['E6'] `
                 $(if ($okE6) { 'PASS' } else { 'FAIL' }) `
                 $(if ($okE6) { $startLine } else { 'sampler.txt 中未找到包含本次数据目录的 start 记录' })
+
+            # E7：真实休眠不好在冒烟里制造，改用 --simulate-resume 触发同一条恢复链路。
+            # 子进程必须继承同一个数据根，命名事件才指向这个 GUI 实例。
+            $simCode = -1
+            $okE7 = $false
+            $e7Detail = ''
+            $resumeLine = $null
+            $recoverLine = $null
+            if ($null -ne $guiProc -and -not $guiProc.HasExited) {
+                $prevDir = $env:THERMALTRACE_DATA_DIR
+                $env:THERMALTRACE_DATA_DIR = $script:guiDataRoot
+                try { $simCode = (Invoke-Exe $smokeExe @('--simulate-resume')).Code }
+                catch { $e7Detail = $_.Exception.Message }
+                finally { $env:THERMALTRACE_DATA_DIR = $prevDir }
+
+                $e7Deadline = (Get-Date).AddSeconds(15)
+                while ((Get-Date) -lt $e7Deadline) {
+                    if (Test-Path -LiteralPath $samplerLog) {
+                        $logLines = @(Get-Content -LiteralPath $samplerLog -Encoding UTF8)
+                        $resumeLine = @($logLines | Where-Object {
+                            $_ -match '\] resume:' -and $_.Contains('模拟唤醒')
+                        }) | Select-Object -Last 1
+                        $recoverLine = @($logLines | Where-Object {
+                            $_ -match '\] recover:' -and $_.Contains('硬件监控重建成功')
+                        }) | Select-Object -Last 1
+                    }
+                    if ($null -ne $resumeLine -and $null -ne $recoverLine) { break }
+                    Start-Sleep -Milliseconds 300
+                }
+                $guiAlive = -not $guiProc.HasExited
+                $okE7 = ($simCode -eq 0) -and ($null -ne $resumeLine) -and
+                        ($null -ne $recoverLine) -and $guiAlive
+                $e7Detail = "退出码 $simCode；resume=$resumeLine；recover=$recoverLine；实例存活=$guiAlive"
+            } else {
+                $e7Detail = 'GUI 实例已退出，未发送模拟唤醒'
+            }
+            Add-Result 'E7' $guiCases['E7'] `
+                $(if ($okE7) { 'PASS' } else { 'FAIL' }) $e7Detail
         } catch {
             Add-Result 'E0' 'GUI 自动化执行' 'FAIL' $_.Exception.Message
             Add-MissingGuiCases 'GUI 自动化中断，未能执行'
         } finally {
-            # 只按 PID 结束本次启动的实例：绝不能用进程名杀，否则会误杀用户正在运行的实例。
+            # 只按 PID 结束本次启动的实例：绝不能用进程名杀，否则会误杀江珀正在运行的实例。
             if ($null -ne $guiProc) {
                 if (-not $guiProc.HasExited) {
                     Stop-Process -Id $guiProc.Id -Force -ErrorAction SilentlyContinue
@@ -650,21 +689,21 @@ if (-not $OnlyAdmin) {
     }
 }
 
-# ============ ：开机自启生命周期（需要管理员）============
+# ============ 阶段 B：开机自启生命周期（需要管理员）============
 Write-Host ''
-Write-Host '--- / 开机自启生命周期 ---' -ForegroundColor Cyan
+Write-Host '--- 阶段 B / 开机自启生命周期 ---' -ForegroundColor Cyan
 
 $exeB = if (Test-Path $realExe) { $realExe } else { $smokeExe }
 
-# 的 --install 会由计划任务拉起一个实例；它的数据目录不受当前进程环境变量
-# 控制（计划任务用自己的用户环境），所以隔离模式下不跑，避免写真实数据。
+# 阶段 B 的 --install 会由计划任务拉起一个实例；它的数据目录不受当前进程环境变量
+# 控制（计划任务用自己的用户环境），所以隔离模式下不跑阶段 B，避免写真实数据。
 $adminSkipReason =
     if (-not (Test-Admin)) { '需要管理员权限' }
-    elseif (-not $UseRealData) { '隔离模式不跑（--install 会拉起实例写真实数据）；需 -UseRealData' }
+    elseif (-not $UseRealData) { '隔离模式不跑阶段 B（--install 会拉起实例写真实数据）；需 -UseRealData' }
     else { $null }
 
 if ($null -ne $adminSkipReason) {
-    Write-Host '  跳过。' -ForegroundColor Yellow
+    Write-Host '  阶段 B 跳过。' -ForegroundColor Yellow
     if ($adminSkipReason -eq '需要管理员权限') {
         Write-Host '  补跑方式（会弹 UAC，选"是"，并用真实目录）：' -ForegroundColor Yellow
         Write-Host '    powershell -ExecutionPolicy Bypass -File scripts\smoke.ps1 -OnlyAdmin -UseRealData' -ForegroundColor Yellow
@@ -674,32 +713,32 @@ if ($null -ne $adminSkipReason) {
     }
 
     $skipCases = @(
-        @{ Id = '1'; Name = '自启：--install 创建计划任务' },
-        @{ Id = '2'; Name = '自启：任务确实存在' },
-        @{ Id = '3'; Name = '自启：--uninstall 删除计划任务' },
-        @{ Id = '4'; Name = '自启：任务确实已删除' }
+        @{ Id = 'B1'; Name = '--install 创建计划任务' },
+        @{ Id = 'B2'; Name = '任务确实存在' },
+        @{ Id = 'B3'; Name = '--uninstall 删除计划任务' },
+        @{ Id = 'B4'; Name = '任务确实已删除' }
     )
     foreach ($c in $skipCases) { Add-Result $c.Id $c.Name 'SKIP' $adminSkipReason }
 } else {
     $r = Invoke-Exe $exeB @('--install')
-    Add-Result '1' '--install 创建计划任务' `
+    Add-Result 'B1' '--install 创建计划任务' `
         $(if ($r.Code -eq 0) { 'PASS' } else { 'FAIL' }) `
         $(if ($r.Code -eq 0) { '' } else { "退出码 $($r.Code)" })
 
-    # 第二项不能只看"注册成功"这句话，必须查任务是否真的存在
+    # B2 不能只看"注册成功"这句话，必须查任务是否真的存在
     $exists = Get-TaskExists
-    Add-Result '2' '任务确实存在' `
+    Add-Result 'B2' '任务确实存在' `
         $(if ($exists) { 'PASS' } else { 'FAIL' }) `
         $(if ($exists) { "schtasks /query /tn $taskName 返回 0" } else { 'schtasks 查询失败' })
 
     $r = Invoke-Exe $exeB @('--uninstall')
-    Add-Result '3' '--uninstall 删除计划任务' `
+    Add-Result 'B3' '--uninstall 删除计划任务' `
         $(if ($r.Code -eq 0) { 'PASS' } else { 'FAIL' }) `
         $(if ($r.Code -eq 0) { '' } else { "退出码 $($r.Code)" })
 
-    # 最后一项最容易漏掉的一半：只删不验等于没删。任务残留会指向已不存在的 exe。
+    # B4 最容易漏掉的一半：只删不验等于没删。任务残留会指向已不存在的 exe。
     $still = Get-TaskExists
-    Add-Result '4' '任务确实已删除' `
+    Add-Result 'B4' '任务确实已删除' `
         $(if (-not $still) { 'PASS' } else { 'FAIL' }) `
         $(if (-not $still) { 'schtasks 查询已返回非 0' } else { '任务仍然存在' })
 

@@ -11,14 +11,14 @@ namespace ThermalTrace.UI;
 /// <summary>
 /// 主窗口宿主：900×600 的四标签窗体（今日概览 / 趋势分析 / 解读 / 设置）。
 ///
-/// 【入口签名不许动】TrayIconHost 里 MainWindowHost.Toggle() 的调用一行都不能改：
+/// 【入口签名不许动】TrayIconHost 里 MainWindowHost.Toggle() 的调用一行都不能改（C1 硬性约束）：
 /// 托盘右键菜单与双击都走这里，改签名会连带炸掉托盘。
 ///
 /// 【为什么点 X 只是隐藏】托盘常驻程序里关窗 ≠ 退出进程。若真的 Close()，Form 会被释放，
 /// 下次再 Show() 抛 ObjectDisposedException，托盘入口从此点不开——这是不能接受的回归。
 /// 退出只认托盘菜单那条路（Application.Exit，CloseReason = ApplicationExitCall）。
 ///
-/// 【不做的事】实时仪表盘 / 大数字 / 告警气泡一律不做——那是 LiteMonitor 的活（产品边界）。
+/// 【不做的事】实时仪表盘 / 大数字 / 告警气泡一律不做——那是 LiteMonitor 的活（docs/project.md 红线 R3）。
 /// 本窗口只负责"看长期结果"和"改配置"。
 /// </summary>
 internal static class MainWindowHost
@@ -149,6 +149,25 @@ internal static class MainWindowHost
             if (page != current) _pendingRefresh.Add(page);
     }
 
+    /// <summary>
+    /// 【2026-11-14】系统唤醒后由电源事件宿主调用：窗口若正开着，立即重算当前页，
+    /// 并把其它页标脏。休眠期间不采样、跨天后当日 CSV 可能刚出现，
+    /// 停在旧画面会让人误以为"今天没数据"。
+    /// </summary>
+    internal static void RefreshVisiblePage()
+    {
+        var form = _form;
+        if (form is not { Visible: true, IsDisposed: false }) return;
+        if (form.InvokeRequired)
+        {
+            try { form.BeginInvoke(new Action(RefreshVisiblePage)); }
+            catch { /* 窗口正在释放，跳过本次刷新 */ }
+            return;
+        }
+        foreach (var page in AllPages(form)) _pendingRefresh.Add(page);
+        RefreshCurrentPage(form);
+    }
+
     private static TabPage? CurrentPage(Form form)
     {
         foreach (var tabs in form.Controls.OfType<TabControl>())
@@ -164,7 +183,7 @@ internal static class MainWindowHost
         if (page is OverviewTab overview) overview.RefreshData();
         else if (page is TrendTab trend) trend.RefreshData();
         else if (page is InterpretationTab interpretation) interpretation.RefreshData();
-        // 设置页同样要重读——自启状态是"现在的事实"，不是窗口上次打开时的事实
+        // 设置页同样要重读——自启状态是"现在的事实"，不是窗口上次打开时的事实（C4）
         else if (page is SettingsTab settings) settings.RefreshData();
     }
 
@@ -203,7 +222,7 @@ internal static class MainWindowHost
     }
 
     /// <summary>
-    /// 硬件趋势的按需构建：趋势页折线 / 柱状视图不调用它，只有硬件视图与解读卡片需要。
+    /// 硬件趋势的按需构建（G07）：趋势页折线 / 柱状视图不调用它，只有硬件视图与解读卡片需要。
     /// 同一次打开内按窗口只构建一次，其次切回直接复用（与 B 项报告共享层同一批缓存、同一个版本戳）。
     /// </summary>
     internal static HardwareTrendReport GetHardwareTrend(AppSettings settings, TrendWindow window)
@@ -303,8 +322,8 @@ internal static class MainWindowHost
         {
             Text = "ThermalTrace — 散热长期趋势记录",
             Icon = AppIcon.Get(),
-            Size = new Size(900, 600),          // 1080p 下单页放下，不滚动
-            MinimumSize = new Size(760, 520),   // 尺寸下限是硬性约束；MaximumSize 不设
+            Size = new Size(900, 600),          // D4：1080p 下单页放下，不滚动
+            MinimumSize = new Size(760, 520),   // C1 硬性约束；MaximumSize 不设
             StartPosition = FormStartPosition.CenterScreen
         };
         RestoreBounds(form);
@@ -313,7 +332,7 @@ internal static class MainWindowHost
         {
             Dock = DockStyle.Fill,
             // 【为什么必须自绘标签头】系统 TabControl 的头读视觉样式色，刷不了主题色，
-            // 深色模式下会是白底黑字的一块。
+            // 深色模式下会是白底黑字的一块（C1 硬性约束 + §2.3）。
             DrawMode = TabDrawMode.OwnerDrawFixed,
             SizeMode = TabSizeMode.Fixed,
             ItemSize = new Size(116, 30),
@@ -365,7 +384,7 @@ internal static class MainWindowHost
     }
 
     // ------------------------------------------------------------------
-    // 窗口位置 / 大小记忆（存 settings.json 的 ui.windowXxx）
+    // 窗口位置 / 大小记忆（C5，存 settings.json 的 ui.windowXxx）
     // ------------------------------------------------------------------
 
     /// <summary>

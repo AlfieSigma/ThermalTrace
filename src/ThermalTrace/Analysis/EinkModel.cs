@@ -5,7 +5,7 @@ using ThermalTrace.Model;
 // ==================================================================
 // 墨水屏图的**唯一**数据模型。
 //
-// 【2026-10-17】旧链（EinkModel + EinkModelBuilder + A/B/C 版面）已整体删除，
+// 【2026-10-17 P6.5】旧链（EinkModel + EinkModelBuilder + A/B/C 版面）已整体删除，
 // 本文件是出图的唯一数据源；推送（PushService）与 --eink 走同一条链，一个数都不另算。
 //
 // 【为什么全画 5 条】办公本的重度/满载一天只有几分钟，"挑一个主类别"根本不成立。
@@ -13,7 +13,7 @@ using ThermalTrace.Model;
 // 【为什么区间不写死】跟随 settings——GUI 里改负载区间，图的分区跟着改。
 // ==================================================================
 
-/// <summary>墨水屏的两个图片页槽位。槽 1 保持固定趋势版面，槽 2 走自清灰以来的平滑版面。</summary>
+/// <summary>墨水屏的两个图片页槽位。槽 1 保持 v9，槽 2 走自清灰以来的平滑版面。</summary>
 public enum EinkSlot
 {
     Slot1 = 1,
@@ -32,8 +32,8 @@ public sealed record EinkSnapshot(
     IReadOnlyList<EinkLine> Lines)
 {
     /// <summary>
-    /// 样本数加权最小二乘（WLS）拟合的总体趋势。不显著（|斜率| &lt; 0.02℃/天或
-    /// 有效点 &lt; 3）时为 null，渲染层不画趋势线。
+    /// 样本数加权最小二乘（WLS）拟合的总体趋势。有效点 &lt; 3 或分母退化时为 null，
+    /// 渲染层不画趋势线；不按斜率大小拦截（0.3.4 起槽 1 与槽 2 同口径）。
     /// </summary>
     public WeightedTrend? Trend { get; init; }
 
@@ -103,16 +103,10 @@ public readonly record struct Slot2Verdict(
 /// </summary>
 public static class EinkSnapshotBuilder
 {
-    /// <summary>
-    /// 斜率显著阈值 0.02℃/天，与 <see cref="Interpreter.SlopeSignificant"/> 同一判据：
-    /// 项目里"够不够格叫趋势"只有这一个标准，不能墨水屏另立一套。
-    /// </summary>
-    private const double SlopeSignificant = 0.02;
-
     /// <summary>至少这么多天数据才谈得上"趋势"（与趋势页"不足 3 天不画图"同一条线）。</summary>
     public const int MinDaysToDraw = 3;
 
-    /// <summary>槽 1（近 30 日逐日线）。</summary>
+    /// <summary>槽 1（v9，近 30 日逐日线）。</summary>
     public static EinkSnapshot Build(AppSettings settings, TrendReport report)
         => BuildSlot1(settings, report);
 
@@ -136,22 +130,24 @@ public static class EinkSnapshotBuilder
         var (curFrom, _, _, _) = TrendWindow.Month.Resolve(first.Value, lastDay);
 
         int count = Math.Max(settings.CategoryNames.Length, settings.CategoryLowerBounds.Length);
+        // 按连续日历日铺点（与 GUI 折线同源）：缺日给 null，渲染层断线且不补 0。
+        // 只遍历有数据的日子会把横轴压短，关机日被前后两天跨过去连成线。
+        var slots = TrendCalendar.Build(report, curFrom, lastDay);
         var lines = new List<EinkLine>();
         for (int c = 0; c < count; c++)
         {
-            var pts = new List<EinkWeightedPoint>();
+            var pts = new List<EinkWeightedPoint>(slots.Count);
             double totalHours = 0;
-            foreach (var d in report.Days)
+            foreach (var slot in slots)
             {
-                if (d.Date < curFrom || d.Date > lastDay) continue;
                 // 取报告口径那一侧的统计；权重取同侧样本数，线和趋势必须来自同一批数。
-                var s = d.Get(c, report.OnAc);
+                var s = slot.Day?.Get(c, report.OnAc);
                 var hasDt = s?.DeltaT is { } dt && !double.IsNaN(dt);
                 var hours = s?.HoursActive ?? 0;
                 // 累计时长只算真正画出 ΔT 的那些天，与图上可见的点保持一致
                 if (hasDt) totalHours += hours;
                 pts.Add(new EinkWeightedPoint(
-                    d.Date,
+                    slot.Date,
                     hasDt ? s!.DeltaT : null,
                     s?.Samples ?? 0,
                     hours));
@@ -170,6 +166,8 @@ public static class EinkSnapshotBuilder
 
         return new EinkSnapshot($"ThermalTrace {spanDays}·{PowerTag(report)}", lastDay, cleanDays, lines)
         {
+            // 槽 1 与槽 2 同一口径：点数 ≥3、分母非零就画，不再叠加 0.02℃/天 显著门槛（0.3.4）。
+            // 该门槛仍服务于解读与趋势页的"是否算得上趋势"，与墨水屏画线无关，故未删除 TrendThresholds 里的常量。
             Trend = FitWeighted(lines, curFrom, lastDay),
             SpanDays = spanDays
         };
@@ -322,7 +320,7 @@ public static class EinkSnapshotBuilder
             SpanDays = spanDays,
             SmoothWindowDays = window,
             CleanDate = clean,
-            Trend = FitWeighted(lines, from, lastDay, requireSignificant: false)
+            Trend = FitWeighted(lines, from, lastDay)
         };
     }
 
@@ -345,17 +343,16 @@ public static class EinkSnapshotBuilder
     /// 对 5×N 全部非缺失点做**按样本数加权**的最小二乘。
     ///
     /// 【为什么不能等权 pooled OLS】每日每档使用时长不同——等权等于让"用了 5 分钟"
-    /// 和"用了 5 小时"说一样响的话（2026-10-16 提出）。权重 = 该日该档样本数 n，
+    /// 和"用了 5 小时"说一样响的话（江珀 2026-10-16 点名）。权重 = 该日该档样本数 n，
     /// 与 architecture.md 口径约定 1（所有聚合按 n 加权）同一纪律。
     ///
     /// 【拟合线跨缺失日是允许的】它是拟合不是数据连线；数据线的断开纪律
     /// （缺失日不连过去）只约束 5 条实线，不约束这条光滑估计。
+    ///
+    /// 【画线不设斜率门槛】槽 1 / 槽 2 同一条：点数 ≥3、分母非零就画。
+    /// 斜率是否"算得上趋势"由解读与趋势页另行判定，不在墨水屏画线处拦截。
     /// </summary>
-    /// <param name="requireSignificant">
-    /// 槽 1 沿用 0.02℃/天 门槛；槽 2 的加权平均预测线按 v1.2 固定绘制，传 false。
-    /// </param>
-    private static WeightedTrend? FitWeighted(List<EinkLine> lines, DateOnly from, DateOnly to,
-                                              bool requireSignificant = true)
+    private static WeightedTrend? FitWeighted(List<EinkLine> lines, DateOnly from, DateOnly to)
     {
         double s0 = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
         int n = 0;
@@ -376,7 +373,6 @@ public static class EinkSnapshotBuilder
         if (Math.Abs(denom) < 1e-9) return null;
 
         var slope = (s0 * sxy - sx * sy) / denom;
-        if (requireSignificant && Math.Abs(slope) < SlopeSignificant) return null;   // 槽 1：不显著不画
 
         var intercept = (sy - slope * sx) / s0;
         var x1 = (double)(to.DayNumber - from.DayNumber);

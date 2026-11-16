@@ -43,6 +43,13 @@ internal sealed class Aggregator
     /// <summary>已写入的行数（本次运行）。</summary>
     public int RowsWritten { get; private set; }
 
+    /// <summary>
+    /// 最近一次成功落盘的时间片归属日期 / 片起点。
+    /// 跨天补写时日志要按这个日期报文件名，不能用写日志那一刻的日期。
+    /// </summary>
+    public DateOnly? LastFlushDay { get; private set; }
+    public DateTimeOffset? LastFlushSliceStart { get; private set; }
+
     /// <summary>启动时是否从快照恢复了当前片（供启动日志留痕）。</summary>
     public bool RestoredFromSnapshot { get; private set; }
     public int RestoredGroups { get; private set; }
@@ -109,8 +116,10 @@ internal sealed class Aggregator
                     var day = DateOnly.FromDateTime(savedStart.LocalDateTime);
                     var rows = DailyStore.WriteSlice(day, restored, _dailyDir);
                     RowsWritten += rows;
+                    LastFlushDay = day;
+                    LastFlushSliceStart = savedStart;
                     SamplerLog.Write("snapshot",
-                        $"启动时补写未完成片 {savedStart:yyyy-MM-dd HH:mm}，{rows} 行");
+                        $"启动时补写未完成片 {savedStart:yyyy-MM-dd HH:mm}，{rows} 行 -> {day:yyyy-MM-dd}.csv");
                 }
                 catch (Exception ex)
                 {
@@ -190,6 +199,8 @@ internal sealed class Aggregator
         var day = DateOnly.FromDateTime(_sliceStart.LocalDateTime);
         var rows = DailyStore.WriteSlice(day, _current.Values, _dailyDir);
         RowsWritten += rows;
+        LastFlushDay = day;
+        LastFlushSliceStart = _sliceStart;
         _current.Clear();
         SliceSnapshotStore.Delete();
         return rows;

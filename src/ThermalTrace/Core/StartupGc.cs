@@ -1,7 +1,7 @@
 namespace ThermalTrace.Core;
 
 /// <summary>
-/// 启动后的一次性 GC 收编（内存优化）。
+/// 启动后的一次性 GC 收编（阶段D 内存优化，见 <c>docs/done/performance/memory.md</c> 第 2 项）。
 ///
 /// 【为什么需要】.NET 的 GC 是懒的：常驻进程的工作集会贴着历史峰值只涨不落。
 /// 启动阶段（JIT、LHM 全硬件枚举、WMI、首次渲染）会产出一大把瞬态垃圾，

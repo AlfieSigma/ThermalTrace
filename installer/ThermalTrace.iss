@@ -3,7 +3,8 @@
 ;  目标产物: dist\ThermalTrace-<版本>-Zectrix-Setup.exe（默认，极趣推送版）
 ;            dist\ThermalTrace-<版本>-Setup.exe（-DStandardEdition，普通版）
 ;
-;  构建与打包说明: 见仓库根目录 BUILD.md
+;  配套文档: docs/done/misc/beta_packaging.md（B3 批次）、
+;            docs/done/misc/friend_edition_2026-11-05.md（第二批）
 ;  构建方式: powershell -ExecutionPolicy Bypass -File scripts\build-beta.ps1
 ;            powershell -ExecutionPolicy Bypass -File scripts\build-installer.ps1
 ;            powershell -ExecutionPolicy Bypass -File scripts\build-installer.ps1 -Edition standard
@@ -34,13 +35,13 @@
 
 #ifdef StandardEdition
   ; 【普通版独立身份：AppId 与安装目录都与极趣推送版不同】
-  ; 极趣推送版装在 %LOCALAPPDATA%\Programs\ThermalTrace，
+  ; 极趣推送版装在 %LOCALAPPDATA%\Programs\ThermalTrace（江珀本机正在跑的实例就在那里），
   ; 普通版必须另起一套：同 AppId 会被 Inno 认成"同款升级"，直接覆盖极趣推送版目录。
   ; 代价（同机并装时）：
   ;   1) 两个卸载项、两个开始菜单项；各自的卸载互不影响；
   ;   2) 数据目录仍是共用的 %LOCALAPPDATA%\ThermalTrace（程序内 AppPaths 写死），
   ;      两版同时运行会重复采样同一份 CSV。两版都对外分发，两个安装包并列发布；
-  ;      同机并装属于已知限制，见 README 中两个版本的说明。
+  ;      同机并装属于已知限制，见 docs/install.md 第 2 节。
   #define AppId "{{E2B9F7A4-6C31-4D8E-9F52-7A0C3B81D6E4}"
   #define AppName "ThermalTrace 普通版"
   #define InstallDirName "ThermalTrace-Standard"
@@ -112,8 +113,10 @@ Name: "autostart"; Description: "{cm:AutoStartTask}"; GroupDescription: "{cm:Add
 Source: "..\{#PublishDir}\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 ; 许可页里明确指向这个文件，必须一起装（GPL / MPL 要求分发时附带许可文本）
 Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
-; 用户说明装在安装目录里，装完即可查阅，不必回头找仓库
-Source: "..\USAGE.md"; DestDir: "{app}"; DestName: "使用说明.md"; Flags: ignoreversion
+; 用户说明装在安装目录里：不放的话用户得回头翻聊天记录才能找到"UAC 怎么点""为什么没数据"
+; 【注意】Source 路径硬编码指向 docs\install.md。移动或重命名该文档必须同步改这里，
+; 否则 ISCC 在打包时才炸 —— 安装器不会提前报"找不到文档"。
+Source: "..\docs/install.md"; DestDir: "{app}"; DestName: "使用说明.md"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
@@ -132,7 +135,7 @@ Filename: "{app}\{#AppExeName}"; Parameters: "--install"; Description: "{cm:Auto
 ; Inno 用 CreateProcess 启动 ThermalTrace.exe，而 exe 清单是 requireAdministrator：
 ; 非提权进程调 CreateProcess 启提权 exe，Windows 不弹 UAC、直接返回
 ; ERROR_ELEVATION_REQUIRED(740)，安装收尾弹出"Unable to execute file"错误框。
-; （Windows 11 实测；UAC 关闭或不提示的环境中同一路径可能不复现。）
+; （联想小新 Win11 实测；开发者 Win10 开发机 UAC 关闭/不提示，同一路径反而不复现。）
 ; shellexec 走 ShellExecuteEx：按清单弹一次 UAC，用户点「是」程序以管理员启动，
 ; 点「否」也只是不启动，安装照常完成、不再报错。与"第一次启动程序才弹 UAC"的
 ; 既有文档口径一致。

@@ -87,7 +87,7 @@ internal sealed record AutoStartResult(bool Ok, string Message)
 /// Explorer 在登录阶段枚举 Run 键时用普通令牌 ShellExecute，遇到需要提权的 exe
 /// <b>不弹 UAC、直接静默跳过</b>。结果就是：注册表写对了、IsEnabled 也显示"已启用"，
 /// 但开机后程序从头到尾没被启动过（2026-10-10 实机重启实测确认，
-/// 实机重启验证了这一点）。
+/// 完整证据链见 docs/done/misc/autostart_diagnosis.md）。
 /// 同机的 LiteMonitor 用计划任务（LogonTrigger + HighestAvailable + InteractiveToken）
 /// 在同一次开机后 16 秒成功自启 —— 提权自启只有计划任务这条路。
 ///
@@ -96,7 +96,7 @@ internal sealed record AutoStartResult(bool Ok, string Message)
 /// （schtasks /create 的命令行开关设不了 DisallowStartIfOnBatteries）。
 ///
 /// 【电池策略：与 LiteMonitor 相反】
-/// 2026-10-10 决定：电池时也采集。因此显式设
+/// 江珀 2026-10-10 拍板：电池时也采集。因此显式设
 /// DisallowStartIfOnBatteries=false + StopIfGoingOnBatteries=false。
 /// CSV 已有 ac 列区分 AC/DC，DC 档数据有价值（分析时按 ac 分组看，不可混算）。
 /// </summary>
@@ -290,7 +290,7 @@ internal static class AutoStart
     ///
     /// 【踩坑】Task Scheduler 导出 XML 时会<b>省略取默认值的元素</b>：
     /// 启用状态为 true 时根本不输出 &lt;Enabled&gt;，只有 false 才写出来
-    /// （2026-10-10 实测确认）。因此"找不到 &lt;Enabled&gt;"必须理解为"已启用"，
+    /// （2026-10-10 本机实测确认）。因此"找不到 &lt;Enabled&gt;"必须理解为"已启用"，
     /// 否则每个正常启用的任务都会被误判成"已被禁用"。
     /// </summary>
     private static (bool Enabled, string Command) QueryDefinition()
@@ -345,7 +345,7 @@ internal static class AutoStart
     {
         if (s.Length == 0) return null;
 
-        // schtasks 按区域设置格式化时间（实测 "2026/10/10 1:19:53"），全为 ASCII，
+        // schtasks 按区域设置格式化时间（本机实测 "2026/10/10 1:19:53"），全为 ASCII，
         // 即使控制台编码判定有误也不影响数字解析。
         string[] formats =
         [
@@ -381,7 +381,7 @@ internal static class AutoStart
         var dir = Path.GetDirectoryName(exePath) ?? "";
         // LogonTrigger + InteractiveToken：托盘需要交互式会话
         // RunLevel=HighestAvailable：读 MSR 必须提权（HKCU Run 做不到这一点）
-        // 电池策略：2026-10-10 决定，电池供电时照常采集（CSV 有 ac 列可区分）
+        // 电池策略：江珀 2026-10-10 拍板，电池供电时照常采集（CSV 有 ac 列可区分）
         return $"""
                 <?xml version="1.0" encoding="UTF-16"?>
                 <Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">

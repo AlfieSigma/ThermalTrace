@@ -29,7 +29,7 @@ internal static class AppPaths
 
     /// <summary>
     /// 正式安装位置（固定路径）。
-    /// 【为什么必须迁移出工作区】exe 原先放在带日期的工作目录下，
+    /// 【为什么必须迁移出工作区】exe 原先放在 CodeBuddy\&lt;日期&gt;\publish\ 下，
     /// 目录名带日期，一旦新开工作区或清理，自启指向的路径就静默失效且毫无提示。
     /// </summary>
     public static string InstallDir { get; } = Path.Combine(

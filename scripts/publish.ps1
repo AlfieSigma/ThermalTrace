@@ -90,7 +90,7 @@ Write-Host ""
 if ($Edition -eq 'standard') {
     Write-Host "普通版不含墨水屏推送；两个版本都出安装包，并列发布。" -ForegroundColor Yellow
 } else {
-    Write-Host "安装到固定位置并注册开机自启（不要直接运行构建目录里的 exe 作为自启目标）:" -ForegroundColor Yellow
+    Write-Host "安装到固定位置并注册开机自启（不要用工作区里的 exe 自启，目录名带日期会静默失效）:" -ForegroundColor Yellow
     Write-Host "    powershell -ExecutionPolicy Bypass -File scripts\deploy.ps1 -Register" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "（单文件 exe 也可拷贝到任意目录运行，双击会触发 UAC 提权。）" -ForegroundColor DarkGray

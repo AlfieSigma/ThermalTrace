@@ -3,7 +3,7 @@ using System.Globalization;
 namespace ThermalTrace.Model;
 
 /// <summary>
-/// SSD 寿命计数器的一行（一天一行）。见非 CPU 信号说明。
+/// SSD 寿命计数器的一行（一天一行）。见 <c>docs/done/analysis_caliber/noncpu_signals.md</c> D3/D4。
 ///
 /// 【为什么只记这些、不记温度】SSD 温度答不了散热也答不了趋势——它的主因是磁盘 I/O，
 /// 与"CPU 单核峰值分档"根本不是同一个驱动量，拿它做纵向趋势读出来的是"这个月拷了多少文件"。

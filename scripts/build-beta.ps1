@@ -31,7 +31,7 @@ param(
     # 打包后跑冒烟测试（scripts\smoke.ps1）。
     # 默认不跑：它要额外 publish 一个 65 MB 的免提权副本，耗时约 20 秒，
     # 而 CI/日常迭代关心的是"能不能出包"而不是"命令行路径有没有坏"。
-    # 需要管理员，非提权时会自动 SKIP。
+    # 阶段 B 需要管理员，非提权时会自动 SKIP。
     [switch]$WithSmoke
 )
 
@@ -189,7 +189,7 @@ if ((Test-Path $setupExe) -and (-not $SkipInstaller)) {
 }
 Write-Host ''
 # 【为什么这句从"需先卸载"改成"可直接覆盖"】
-# 旧注释说的"按 AppId 判重"被误读成了"装重了要先卸"。实测：卸载项落在
+# 旧注释说的"按 AppId 判重"被误读成了"装重了要先卸"。实测本机：卸载项落在
 # HKCU\...\Uninstall\{7B3D6C58-...}_is1（键名不含版本号），同 AppId 的新包会
 # 就地改写这一个键 —— 控制面板始终只有一个条目，不需要先卸载，历史数据
 # （%LOCALAPPDATA%\ThermalTrace\）在安装目录之外，也不受影响。

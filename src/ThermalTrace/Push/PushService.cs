@@ -14,7 +14,7 @@ internal sealed record PushOutcome(bool Ok, string Message)
 {
     /// <summary>
     /// 因当日幂等而跳过（既非成功也非失败）。GUI 据此给中性提示而不是红色"失败"——
-    /// 手动按钮遵循每日一次，跳过是预期行为。
+    /// 手动按钮遵循每日一次，跳过是预期行为（计划 §5.5）。
     /// </summary>
     public bool Skipped { get; init; }
 }
@@ -36,11 +36,11 @@ internal readonly record struct PageIdResolution(int Value, string? Problem)
 /// 墨水屏推送编排：生成快照 → 推到极趣云 → 写幂等状态 → 失败写日志。
 ///
 /// 三个入口共用本类：
-///   - GUI「立即推送一次」
+///   - GUI「立即推送一次」（P3）
 ///   - CLI <c>--push</c>
-///   - <c>SamplerService</c> 每日检查
+///   - <c>SamplerService</c> 每日检查（P4）
 ///
-/// 设计底线：<b>推送失败绝不拖累采样主循环</b>——本类不抛未处理异常，
+/// 设计底线（计划 §5.5）：<b>推送失败绝不拖累采样主循环</b>——本类不抛未处理异常，
 /// 任何网络 / 设备错误都被吞掉、记到 <c>logs\push.txt</c>，调用方照常继续。
 /// </summary>
 internal static class PushService
@@ -91,7 +91,7 @@ internal static class PushService
         var due = DueDate(settings);
         var state = LoadState();
 
-        // 两槽页位相同 → 槽 2 不适用：后推的图会覆盖前一张，不能静默覆盖
+        // 两槽页位相同 → 槽 2 不适用：后推的图会覆盖前一张，不能静默覆盖（计划 §3.3）
         var pageConflict = page1.Value == page2.Value;
 
         var slot1Due = IsSlotDue(state, EinkSlot.Slot1, due, force);
@@ -118,7 +118,7 @@ internal static class PushService
         bool anyFailure = false;
         bool anyAttempted = false;
 
-        // ---------- 槽 1：近 30 天趋势图 ----------
+        // ---------- 槽 1：近 30 天 v9 ----------
         if (!slot1Due)
         {
             results.Add($"槽1：业务日期 {due:yyyy-MM-dd} 已推送过，跳过");
@@ -201,8 +201,8 @@ internal static class PushService
     }
 
     /// <summary>
-    /// 槽 1 的图：数据不足时推"已积累 N 天"模板图（按天数缓存，不反复重画），
-    /// 否则走趋势图（5 档 ΔT + 加权总体趋势）。与 <c>--eink --slot 1</c> 同一条链，一个数都不另算。
+    /// 槽 1 的图：数据不足时推"已积累 N 天"模板图（按天数缓存，不反复重画，决策 D7），
+    /// 否则走 P6 v9（5 档 ΔT + 加权总体趋势）。与 <c>--eink --slot 1</c> 同一条链，一个数都不另算。
     /// </summary>
     private static (byte[] Png, string What) BuildSlot1Image(
         AppSettings settings, TrendReport report, Action<string>? log)
@@ -219,8 +219,8 @@ internal static class PushService
         var snap = EinkSnapshotBuilder.Build(settings, report);
         return (EinkRenderer.RenderV2(snap, log, DateTime.Now),
             snap.HasData
-                ? $"趋势图（{snap.Lines.Count} 档 ΔT · {snap.Lines[0].Points.Count} 天）"
-                : "趋势图（窗口内无可绘制数据）");
+                ? $"趋势图（v9 · {snap.Lines.Count} 档 ΔT · {snap.Lines[0].Points.Count} 天）"
+                : "趋势图（v9 · 窗口内无可绘制数据）");
     }
 
     /// <summary>
@@ -303,7 +303,7 @@ internal static class PushService
     /// 否则是昨天。
     ///
     /// 【为什么不是"今天"】23:00–24:00 没推成（没开机 / 休眠）时，次日 0:00–23:00 之间
-    /// "今天"永远还没到点——用今天当键，漏推的那一帧永远补不上（"错过则下次运行时补推"
+    /// "今天"永远还没到点——用今天当键，漏推的那一帧永远补不上（D6 承诺的"错过则下次运行时补推"
     /// 从不发生）。用 T 当键，次日第一次检查就发现 T 仍停在昨天，当即补推，且必然在下一个
     /// 推送时刻之前。
     /// <paramref name="now"/> 可注入以便离线验时序（测试 / 排查）。
@@ -325,10 +325,10 @@ internal static class PushService
         settings.Push.Enabled && (lastPushed is not { } last || last < DueDate(settings, now));
 
     /// <summary>
-    /// 调度入口：读一次状态文件 + 判定，供 <c>SamplerService</c> 每 60 秒调用。
+    /// 调度入口（P4.1）：读一次状态文件 + 判定，供 <c>SamplerService</c> 每 60 秒调用。
     /// 只读不写，成本是一次小文件读加两次比较。
     ///
-    /// 【为什么只看槽 1】槽 1 恒适用（近 30 天趋势图），槽 2 可能因无清灰日 / 有效日不足长期
+    /// 【为什么只看槽 1】槽 1 恒适用（近 30 天 v9 图），槽 2 可能因无清灰日 / 有效日不足长期
     /// 不适用。若把槽 2 也算进"到期"，它会每天把判定顶成真、反复重推槽 1。槽 2 的补推
     /// 由槽 1 的到期带动；两槽都推成功后各自记 T，不会重复。
     /// </summary>

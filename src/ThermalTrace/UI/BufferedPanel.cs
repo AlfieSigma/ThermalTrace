@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 namespace ThermalTrace.UI;
 
 /// <summary>
-/// 自绘基类。页面上的卡片与图表全部从它派生，省掉每次重写一遍 SetStyle。
+/// 自绘基类。C2 的卡片、C3 的图表全部从它派生，省掉每次重写一遍 SetStyle。
 ///
 /// 三个样式位各自的理由：
 ///  - UserPaint           → 交给 OnPaint，不走系统绘制
@@ -149,7 +149,7 @@ internal static class ThemeOps
         {
             // 自绘件自己按 Theme.Current 画，别动它的底色
             if (c is BufferedPanel) continue;
-            // 系统日历控件不跟随深色（主题处理约定）
+            // 系统日历控件不跟随深色（docs/done/gui/gui_stage_c.md §5）
             if (c is DateTimePicker) continue;
 
             c.BackColor = surface;

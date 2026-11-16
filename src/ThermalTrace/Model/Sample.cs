@@ -23,23 +23,23 @@ public sealed record Sample
     /// <summary>全核平均温度。</summary>
     public double CpuCoreAvgC { get; init; } = double.NaN;
     /// <summary>
-    /// 【实测】"Distance to TjMax"：距离 100℃ 降频线的余量（℃）。
+    /// 【S1 实测】"Distance to TjMax"：距离 100℃ 降频线的余量（℃）。
     /// 这是回答"我会不会降频""离危险还有多远"最直接的指标——
     /// 90℃ 时它约为 10℃，降到个位数就意味着马上要降频。
     /// 注意它的方向与温度相反：<b>越小越危险</b>。
     /// </summary>
     public double TjMaxDistanceC { get; init; } = double.NaN;
-    /// <summary>主 GPU 温度（默认绑独显）。</summary>
+    /// <summary>主 GPU 温度（默认绑MX450 独显）。</summary>
     public double GpuC { get; init; } = double.NaN;
     /// <summary>
-    /// 第二 GPU 温度（核显）。
+    /// 第二 GPU 温度（核显 Iris Xe）。
     /// 笔记本双显卡必须分别记录：轻负载时热量实际产生在核显上，
     /// 只记独显会系统性低估发热，导致"清灰无效"的错误结论。
     /// </summary>
     public double GpuC2 { get; init; } = double.NaN;
-    /// <summary>主 GPU 负载（%）。与 <see cref="GpuC"/> 同一张卡（独显）。</summary>
+    /// <summary>主 GPU 负载（%）。与 <see cref="GpuC"/> 同一张卡（MX450 独显）。</summary>
     public double GpuLoadPct { get; init; } = double.NaN;
-    /// <summary>第二 GPU 负载（%）。与 <see cref="GpuC2"/> 同一张卡（核显）。</summary>
+    /// <summary>第二 GPU 负载（%）。与 <see cref="GpuC2"/> 同一张卡（核显 Iris Xe）。</summary>
     public double Gpu2LoadPct { get; init; } = double.NaN;
     /// <summary>NVMe/SSD 温度。</summary>
     public double SsdC { get; init; } = double.NaN;
@@ -90,7 +90,7 @@ public sealed record Sample
     /// 主 GPU 负载：与 <see cref="PrimaryGpuC"/> 同一条优先级链（独显优先，读不到取核显）。
     ///
     /// 【为什么必须记负载】2026-10-16 之前的"GPU 使用时长"是"采到 GPU 温度即计入"，
-    /// 而独显待机也报温度——那个数字等于开机时长，回答不了"到底用没用显卡"。
+    /// 而独显待机也报温度——那个数字在本机等于开机时长，回答不了"到底用没用显卡"。
     /// 负载 > 0 才叫使用，与 LiteMonitor 的「0% / 非 0」是同一口径。
     /// 负载读不到时为 NaN（缺失），由聚合层决定该样本进不进档——绝不填 0。
     /// </summary>

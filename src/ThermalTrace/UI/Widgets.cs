@@ -7,7 +7,7 @@ namespace ThermalTrace.UI;
 /// 自绘常用件。全部从 BufferedPanel 派生，因此自动跟随主题、自动双缓冲。
 ///
 /// 【红线】这里禁止硬编码任何 Color——一律取 Theme.Current.*。
-/// 两套配色必须成对维护，避免维护漂移。
+/// 两套配色的维护漂移是阶段 C 最大的慢性病（docs/done/gui/gui_stage_c.md §6）。
 /// </summary>
 
 internal static class Gfx
@@ -154,7 +154,7 @@ internal sealed class AccentButton : BufferedPanel
     /// <remarks>
     /// 必须走 setter 触发 <see cref="Control.Invalidate"/>：调用方（如 TrendTab 切视图/范围）
     /// 只改这一位就指望按钮立刻变样。用自动属性的话"失去选中态的那个按钮"不会重绘，
-    /// 要等鼠标划过它（OnMouseEnter 里那次 Invalidate）才变灰——2026-10-10 实际反馈的正是这个。
+    /// 要等鼠标划过它（OnMouseEnter 里那次 Invalidate）才变灰——2026-10-10 江珀报的正是这个。
     /// </remarks>
     public bool Primary
     {

@@ -1,4 +1,3 @@
-# 构建产物
 bin/
 obj/
 publish/
@@ -6,14 +5,38 @@ publish-standard/
 dist/
 artifacts/
 .tools/
-
-# IDE 与本地用户配置
+*.user
 .vs/
 .idea/
-*.user
-
-# 本地运行数据与日志
 data/
 reports/
 *.log
-*.pdb
+
+# ---- 极趣云 API Key 明文：永不入库 ----
+# 计划 docs/active/eink_push.md 决策 D3：Key 经 DPAPI 加密后只存 settings.json 的
+# push.apiKeyEnc，明文不落盘、更不进 Git。此文件是江珀手工放置的明文来源，
+# 录入加密存储后即可删除；放在这里是为了防止 git add -A 误伤。
+极趣API.txt
+
+# ---- Obsidian ----
+# 社区插件 / 主题的原版代码：社区发布、可随时重下、会随版本更新，本地无修改。
+# 装了哪些由 .obsidian/community-plugins.json 记录（那份仍入库），换机能还原。
+.obsidian/plugins/*/main.js
+.obsidian/plugins/*/manifest.json
+.obsidian/plugins/*/styles.css
+.obsidian/themes/*/
+
+# 窗口布局 / 最近打开文件：每次开关 Obsidian 都变，噪音远大于信息
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/cache
+# 回收站：误删可从 Obsidian 自身恢复，入库只会污染历史
+.trash/
+
+# ---- 全局 *.ico 例外：app 图标是源码资产，必须入库 ----
+# 否定式须写在库根 .gitignore（仓库级优先级高于 core.excludesFile），
+# 且 src/ 下不得再放 .gitignore，否则深层规则会局部穿透。
+!src/ThermalTrace/app.ico
+
+# ---- WorkBuddy 工作目录：含会话记忆、mockup、临时排查脚本，全不入库 ----
+.workbuddy/

@@ -29,7 +29,7 @@ internal static class Program
         {
             AppPaths.EnsureAll();
 
-            // 每次启动都留一条可观测记录：开机时间、是否提权、exe 路径。
+            // 【阶段B2】每次启动都留一条可观测记录：开机时间、是否提权、exe 路径。
             // "程序到底起来过没有"以前只能靠 CSV 时间戳反推，现在直接看 logs\boot.txt。
             BootLog.Record(args);
 
@@ -51,6 +51,7 @@ internal static class Program
 #endif
                 CommandKind.Dump => Commands.Dump(cmd),
                 CommandKind.Status => AutoStartCommands.Status(),
+                CommandKind.SimulateResume => Commands.SimulateResume(),
                 _ => Commands.Background()
             };
         }

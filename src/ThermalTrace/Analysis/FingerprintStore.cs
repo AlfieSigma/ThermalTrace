@@ -92,7 +92,7 @@ internal static class FingerprintStore
     /// 在已加载的口径列表里查某日生效的一条。
     ///
     /// 【为什么要有批量入口】趋势报告的口径校验要对窗口内每一天调用一次，
-    /// 旧实现每次 <see cref="Load"/> 都读一遍 JSON、反序列化并排序。
+    /// 旧实现每次 <see cref="Load"/> 都读一遍 JSON、反序列化并排序（G06）。
     /// <paramref name="records"/> 必须按 <see cref="FirstSeen"/> 升序，
     /// <see cref="Load"/> 的返回值满足该约定；查找用二分，语义与逐条扫描一致。
     /// </summary>
@@ -124,7 +124,7 @@ internal static class FingerprintStore
     /// <summary>
     /// CPU 名只在进程内取一次并缓存（口径指纹每次启动都要用）。
     ///
-    /// 【2026-10-13 启动提速】原先走 WMI，启动要同步阻塞约 1.5 秒（实测 1532 ms）；
+    /// 【2026-10-13 启动提速】原先走 WMI，启动要同步阻塞约 1.5 秒（本机实测 1532 ms）；
     /// 改走注册表路径（14 ms）。核数不需要，WMI 那套留给自检与诊断。
     /// 注册表读不到时 <see cref="SystemProbe.ReadCpuName"/> 内部会自动退回 WMI。
     /// </summary>

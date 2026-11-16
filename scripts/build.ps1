@@ -47,7 +47,7 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-# 日常构建不再带 RID（发布属性只在 publish 时生效，见 BUILD.md），输出目录没有 win-x64 子层
+# 日常构建不再带 RID（发布属性只在 publish 时生效，见 docs\build.md），输出目录没有 win-x64 子层
 $exe = Join-Path $root "src\ThermalTrace\bin\$Configuration\net8.0-windows\ThermalTrace.exe"
 Write-Host ""
 Write-Host "[OK] 编译成功" -ForegroundColor Green

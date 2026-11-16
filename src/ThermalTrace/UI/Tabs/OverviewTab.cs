@@ -8,9 +8,9 @@ using ThermalTrace.Services;
 namespace ThermalTrace.UI.Tabs;
 
 /// <summary>
-/// 「今日概览」页：顶部一行统计 → 供电 AC/DC 切换 → 五个负载档大卡片 → 页脚。
+/// 「今日概览」页（C2，决策 D2）：顶部一行统计 → 供电 AC/DC 切换 → 五个负载档大卡片 → 页脚。
 ///
-/// 【取值规则】
+/// 【取值规则（docs/done/gui/gui_stage_c.md §C2）】
 ///  - 每张卡按 settings.CategoryOf(bandLower) 归并，行权重 = SliceRow.SampleCount
 ///  - ΔT = 该类加权均温 − Aggregator.DailyIdleBaseline（复用后端，不自己算）
 ///  - 无数据的类一律显示「—」，绝不显示 0℃（0 会被读成"凉快"）
@@ -20,7 +20,7 @@ namespace ThermalTrace.UI.Tabs;
 /// 【数据从哪来】全部走 Analysis.TodaySummary，与 CLI --today 同源同值。
 /// 本类只负责排版与着色，不碰任何计算。
 ///
-/// 【为什么 BackColor 要自己赋】TabPage 默认按视觉样式取色，深色主题下会是一块白底。
+/// 【为什么 BackColor 要自己赋】TabPage 默认按视觉样式取色，深色主题下会是一块白底（§2.3）。
 /// </summary>
 internal sealed class OverviewTab : ThemedTabPage
 {
@@ -53,6 +53,7 @@ internal sealed class OverviewTab : ThemedTabPage
     private bool _rebinding;
     private DateTime _lastFileWriteUtc;
     private long _lastFileLength = -1;
+    private bool _lastFileExists;
 
     /// <summary>
     /// <paramref name="sampler"/> 为 null 时（诊断路径直接建窗口）仍可点重新绑定，
@@ -189,7 +190,7 @@ internal sealed class OverviewTab : ThemedTabPage
         _body.Controls.Add(_note, 0, 3);
 
         // ---------------- 空态 ----------------
-        // 数据少的时候才是用户最常看到的样子，所以这里要回答三个问题：
+        // 【C5 文案走查】数据少的时候才是用户最常看到的样子，所以这里要回答三个问题：
         //   现在是什么情况 / 什么时候会有数据 / 一直为空的话该查什么。
         _empty = new TableLayoutPanel
         {
@@ -287,7 +288,7 @@ internal sealed class OverviewTab : ThemedTabPage
     /// <summary>
     /// 重新取数并重画。窗口是"隐藏而非销毁"，每次打开主窗口、每次切回本页都要调一次，
     /// 否则用户看到的是几小时前的旧卡片（采样每 30 分钟才落一片）。
-    /// 设置页改了桶边界后切回来也靠它立即重算。
+    /// 设置页改了桶边界后切回来也靠它立即重算（§2.7）。
     /// </summary>
     public void RefreshData()
     {
@@ -439,7 +440,7 @@ internal sealed class OverviewTab : ThemedTabPage
     /// <summary>
     /// 空态专属状态行。页头挂在 <c>_body</c> 里，空态时被整块隐藏；
     /// 上一版把落盘 / 心跳提示都放页头，结果最需要解释的空态一条都看不见
-    /// （2026-11-06 实测反馈）。这里把关键事实直接写进空态副文案。
+    /// （2026-11-06 江珀实机反馈）。这里把关键事实直接写进空态副文案。
     /// </summary>
     private string EmptyStatusLine(TodaySummaryData d, AppSettings settings)
     {
@@ -528,10 +529,14 @@ internal sealed class OverviewTab : ThemedTabPage
         try
         {
             var info = new FileInfo(AppPaths.DailyFile(DateOnly.FromDateTime(DateTime.Now)));
-            if (!info.Exists) return;
-            var write = info.LastWriteTimeUtc;
-            var len = info.Length;
-            if (write == _lastFileWriteUtc && len == _lastFileLength) return;
+            info.Refresh();
+            // 文件不存在也算一种状态：跨天后今日文件还没生成、以及今日文件刚出现，
+            // 都必须重画一次，不能因为 !Exists 直接把页面停在旧内容上。
+            var exists = info.Exists;
+            var write = exists ? info.LastWriteTimeUtc : DateTime.MinValue;
+            var len = exists ? info.Length : 0L;
+            if (exists == _lastFileExists && write == _lastFileWriteUtc && len == _lastFileLength) return;
+            _lastFileExists = exists;
             _lastFileWriteUtc = write;
             _lastFileLength = len;
             RefreshData();
@@ -689,8 +694,8 @@ internal sealed class OverviewTab : ThemedTabPage
         "未能在本机找到可用的 CPU 温度传感器，绑定未保存（配置保持原样）。\n\n"
         + "请依次确认：\n"
         + "  1. 是否以管理员身份运行 —— 读 MSR 必须提权；\n"
-        + "  2. 安全软件是否拦截了 WinRing0 驱动（360 / 火绒等），\n"
-        + "     拦截后所有温度恒为空，详见 README 的常见问题。";
+        + "  2. 安全软件是否拦截了 WinRing0 驱动（360 / 火绒 / 联想管家等），\n"
+        + "     拦截后所有温度恒为空，详见 docs/install.md 的『安全软件拦截』一节。";
 
     private const string RebindSavedHeader = "绑定已保存，以下是本机识别到的传感器：\n\n";
 

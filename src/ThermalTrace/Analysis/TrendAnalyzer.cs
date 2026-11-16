@@ -20,7 +20,7 @@ public static class TrendAnalyzer
     /// <summary>
     /// 生成趋势报告。
     ///
-    /// 【window 参数是可选的】不传 = 原有行为（7 天 / 30 天两套对比 + 全量斜率），
+    /// 【window 参数是可选的】不传 = 阶段 B 的既有行为（7 天 / 30 天两套对比 + 全量斜率），
     /// CLI <c>--trend</c> 与 HTML 报告零改动；传了就只按该窗口产出
     /// <see cref="TrendReport.Comparison"/>，斜率也收敛到该窗口覆盖的天数内
     /// （否则"看近 7 天"却给出全量斜率，图与结论互相打脸）。
@@ -37,7 +37,7 @@ public static class TrendAnalyzer
 
         var days = new List<DailyTrend>();
         // 分组只做一次并把当日子集物化：DailyIdleBaseline 原先把全量历史逐日再过滤一遍，
-        // 复杂度是"天数 × 总行数"，一年数据下会成为 Build 的主要热点。
+        // 复杂度是"天数 × 总行数"，一年数据下会成为 Build 的主要热点（G06）。
         var byDate = rows.GroupBy(r => r.Date).OrderBy(g => g.Key).ToList();
 
         foreach (var g in byDate)

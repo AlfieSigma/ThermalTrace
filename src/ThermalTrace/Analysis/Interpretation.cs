@@ -3,17 +3,17 @@ namespace ThermalTrace.Analysis;
 /// <summary>
 /// 趋势解读的数据模型（纯数据，零逻辑、零 IO、零 UI 依赖）。
 ///
-/// 【为什么独立成文件】解读结果要同时喂给三个展示位——趋势页卡片、
-/// HTML 报告结论区、CLI <c>--interpret</c>——模型只有一份，
+/// 【为什么独立成文件】解读结果要同时喂给三个展示位——趋势页卡片（B2）、
+/// HTML 报告结论区（B3）、CLI <c>--interpret</c>（B1）——模型只有一份，
 /// 三个展示位复用同一份 <see cref="InterpretationReport"/>，
-/// 从结构上保证"三处同源同值"（三处同源同值的口径要求）。
+/// 从结构上保证"三处同源同值"（docs/done/analysis_caliber/trend_interpretation.md 决策 D2）。
 ///
 /// 【缺失纪律（全项目铁律）】缺失一律 <c>null</c> / 「—」，绝不用 0 代替：
 /// 0℃ 会被读成"凉快"，0 K/W 会被读成"效率零恶化"，都与"没采到"是两回事。
 /// </summary>
 
 /// <summary>
-/// 健康度等级（用等级不用分数——分数诱导过度解读）。
+/// 健康度等级（决策 D5：用等级不用分数——分数诱导过度解读）。
 /// 数值顺序即严重程度顺序，可直接比较大小取"最差"的一档。
 /// </summary>
 public enum HealthLevel
@@ -55,14 +55,14 @@ public static class HealthLevelExtensions
 ///  - <see cref="Category"/>：负载类别名；跨类别汇总（超 85 累计）与环境气温为空串。
 ///  - <see cref="Metric"/>："ΔT" / "K/W" / "超85时长" / "斜率" / "环境气温" 之一。
 ///  - <see cref="Change"/>：带符号的变化量，如 "+1.2℃"；无变化量时为 ""。
-///  - <see cref="Detail"/>：按模板排好方向的前后数值，如 "59.5℃ ← 58.3℃"；
+///  - <see cref="Detail"/>：按 §5.3 模板排好方向的前后数值，如 "59.5℃ ← 58.3℃"；
 ///    缺失为 ""（由 <see cref="Text"/> 渲染为「—」，绝不填 0）。
 /// </summary>
 public sealed record EvidenceItem(string Category, string Metric, string Change, string Detail)
 {
     /// <summary>
-    /// 按模板拼出完整句子。做成计算属性而不是让三个展示位各拼一遍：
-    /// 模板漂移等于三处结论打脸。数字与箭头方向由 <see cref="Interpreter"/> 填好。
+    /// 按 §5.3 文案模板拼出完整句子。做成计算属性而不是让三个展示位各拼一遍：
+    /// 模板漂移等于三处结论打脸（D2）。数字与箭头方向由 <see cref="Interpreter"/> 填好。
     /// </summary>
     public string Text => Metric switch
     {
@@ -89,7 +89,7 @@ public sealed record EvidenceItem(string Category, string Metric, string Change,
 /// <summary>
 /// 一条归因（假设层）：假设 + 支撑证据 + 置信度 + 验证方法。
 ///
-/// 【诚实性硬约束】归因是假设不是结论，必须可证伪：
+/// 【诚实性硬约束（§5.8-3）】归因是假设不是结论，必须可证伪：
 /// <see cref="Verification"/> 为 null 的归因不允许输出（由 <see cref="Interpreter"/> 保证）。
 /// </summary>
 public sealed record AttributionItem(string Hypothesis, string Support, string Confidence, string? Verification)
@@ -139,7 +139,7 @@ public sealed record CleanServiceStat(
         }
     }
 
-    /// <summary>不足 30 天不外推月均：数字给 null，文案层就不会出现"约…仅供参考"。</summary>
+    /// <summary>不足 30 天不外推月均（§5.6）：数字给 null，文案层就不会出现"约…仅供参考"。</summary>
     private string PerMonth => RisePerMonth is { } rpm ? $"（约 {rpm:0.0}℃/月，仅供参考）" : "";
 
     private static string F(double? v) => v is null ? "—" : v.Value.ToString("0.0");

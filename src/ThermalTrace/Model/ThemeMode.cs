@@ -3,9 +3,9 @@ namespace ThermalTrace.Model;
 /// <summary>
 /// 主题模式。默认 <see cref="Follow"/> —— 后台记录工具没有理由让用户手动挑主题。
 ///
-/// 配合 <c>UiOptions.ThemeMode</c> 持久化到 settings.json，
+/// 【C0 新增】配合 <c>UiOptions.ThemeMode</c> 持久化到 settings.json，
 /// 序列化为字符串（JsonStore 已注册 JsonStringEnumConverter）。
-/// 详见主题处理约定。
+/// 详见 docs/done/gui/gui_stage_c.md 决策 D1。
 /// </summary>
 public enum ThemeMode
 {
