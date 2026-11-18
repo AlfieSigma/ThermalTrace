@@ -12,10 +12,10 @@ Windows 10/11，点下面的文件名直接下载：
 
 | 安装包 | 说明 |
 |---|---|
-| **[ThermalTrace-0.3.6-Setup.exe](https://github.com/AlfieSigma/ThermalTrace/releases/download/v0.3.6/ThermalTrace-0.3.6-Setup.exe)**（普通版，主推） | 不含墨水屏推送。没有极趣 Note4 就下这个。 |
-| **[ThermalTrace-0.3.6-Zectrix-Setup.exe](https://github.com/AlfieSigma/ThermalTrace/releases/download/v0.3.6/ThermalTrace-0.3.6-Zectrix-Setup.exe)**（极趣推送版） | 含极趣 Note4 墨水屏推送。需要极趣 Note4 与自己的极趣 API Key、设备 MAC。 |
+| **[ThermalTrace-0.3.7-Setup.exe](https://github.com/AlfieSigma/ThermalTrace/releases/download/v0.3.7/ThermalTrace-0.3.7-Setup.exe)**（普通版，主推） | 不含墨水屏推送。没有极趣 Note4 就下这个。 |
+| **[ThermalTrace-0.3.7-Zectrix-Setup.exe](https://github.com/AlfieSigma/ThermalTrace/releases/download/v0.3.7/ThermalTrace-0.3.7-Zectrix-Setup.exe)**（极趣推送版） | 含极趣 Note4 墨水屏推送。需要极趣 Note4 与自己的极趣 API Key、设备 MAC。 |
 
-两个文件也都在 [v0.3.6 Release](https://github.com/AlfieSigma/ThermalTrace/releases/tag/v0.3.6) 页面。
+两个文件也都在 [v0.3.7 Release](https://github.com/AlfieSigma/ThermalTrace/releases/tag/v0.3.7) 页面。
 
 > GitHub 页面上的“Source code (zip / tar.gz)”是源码压缩包，不是安装程序，双击没有安装向导。要从源码自行编译，见 [BUILD.md](BUILD.md)。
 
@@ -107,7 +107,7 @@ ThermalTrace 对应的做法是：
 
 显示今天已经落盘的数据：
 
-- 页头：日期、环境气温、已记录时长、样本数，以及当前口径说明。
+- 页头：日期、环境气温、已落盘时长、样本数，以及当前口径说明。
 - **交流 / 电池**切换。两路数据分开统计，不混算。
 - 五张负载档卡片：空闲、轻度、中等、重度、满载。每张显示加权均温、ΔT、时长、样本数、平均功耗和超过 85℃ 的占比。
 - 页脚：今日最高温度、超过 85℃ 的累计分钟数，以及 GPU、SSD 的当前值。
@@ -205,7 +205,7 @@ ThermalTrace 对应的做法是：
 
 **刚装上今天没有数据？**
 
-正常。数据默认每 30 分钟才落盘一个时间片，刚装好需要等一会儿。也可以在“今日概览”的空态里点“立即自检”，确认传感器是否可读。
+正常。数据默认每 30 分钟才落盘一个时间片，刚装好需要等一会儿。“今日概览”空态会分开写“已落盘”样本数和“当前片已采样”数：若当前片已有样本却还没到落盘点，主文案会明确写“当前时间片已有样本，尚未落盘。”，不用误以为没采到。也可以在空态里点“立即自检”，确认传感器是否可读。
 
 **休眠一晚，今日概览没有数据是不是坏了？**
 

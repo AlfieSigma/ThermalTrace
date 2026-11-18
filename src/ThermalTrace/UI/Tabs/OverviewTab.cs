@@ -54,6 +54,13 @@ internal sealed class OverviewTab : ThemedTabPage
     private DateTime _lastFileWriteUtc;
     private long _lastFileLength = -1;
     private bool _lastFileExists;
+    private bool _lastSnapshotExists;
+    private DateTime _lastSnapshotWriteUtc;
+    private long _lastSnapshotLength = -1;
+
+    /// <summary>当前片快照里的样本数（磁盘文件，5 分钟粒度）。</summary>
+    private readonly record struct PendingSliceInfo(
+        int TotalSamples, int AcSamples, int DcSamples, DateTime Start);
 
     /// <summary>
     /// <paramref name="sampler"/> 为 null 时（诊断路径直接建窗口）仍可点重新绑定，
@@ -316,6 +323,11 @@ internal sealed class OverviewTab : ThemedTabPage
 
     private void Render(TodaySummaryData d, AppSettings settings)
     {
+        // 当前片快照来自磁盘（每 5 分钟一次），不是内存样本；R3 不读实时值的口径不变。
+        // 片起点校验在 PendingSliceSamples 里做，避免把上次运行残留的旧片当成"正在采"。
+        var sliceMin = Math.Clamp(settings.Sampler.SliceMinutes, 5, 120);
+        var pending = PendingSliceSamples(sliceMin);
+
         // 空态按"当前供电"判断，而不是两路合起来的 HasAnyData：
         // 只有另一路有数据时，切到空的那一路应当看到对应文案（G3a）。
         var empty = _onAc ? !d.HasAcData : !d.HasDcData;
@@ -342,11 +354,13 @@ internal sealed class OverviewTab : ThemedTabPage
             }
             else if (!d.HasAcData && !d.HasDcData)
             {
-                _emptyMain.Text = "今日暂无数据。";
-                var sliceMin = Math.Clamp(settings.Sampler.SliceMinutes, 5, 120);
-                _emptySub.Text =
-                    $"程序每 {sliceMin} 分钟落盘一个时间片，稍后再看即可；"
-                    + $"若已运行超过 {sliceMin} 分钟仍然为空，请确认是以管理员权限启动的 —— 读 MSR 必须提权。";
+                _emptyMain.Text = pending.TotalSamples > 0
+                    ? "当前时间片已有样本，尚未落盘。"
+                    : "今日暂无数据。";
+                _emptySub.Text = pending.TotalSamples > 0
+                    ? $"程序每 {sliceMin} 分钟落盘一个时间片，当前片的样本将在片末写入今日 CSV，稍后再看即可。"
+                    : $"程序每 {sliceMin} 分钟落盘一个时间片，稍后再看即可；"
+                      + $"若已运行超过 {sliceMin} 分钟仍然为空，请确认是以管理员权限启动的 —— 读 MSR 必须提权。";
             }
             else
             {
@@ -357,7 +371,7 @@ internal sealed class OverviewTab : ThemedTabPage
                 _emptySub.Text = "今天只有另一路供电的记录；上方切换按钮可切过去查看已有数据。";
             }
             // 页头挂在 _body 里，空态时整块隐藏；状态信息必须写进这里才看得见。
-            _emptySub.Text += "\n" + EmptyStatusLine(d, settings);
+            _emptySub.Text += "\n" + EmptyStatusLine(d, settings, pending);
         }
         _empty.Visible = empty;
         _body.Visible = !empty;
@@ -373,8 +387,8 @@ internal sealed class OverviewTab : ThemedTabPage
 
         var headerText = $"{d.Date:yyyy-MM-dd}   供电：{(_onAc ? "交流" : "电池")}"
             + $"   环境气温 {(double.IsNaN(d.AmbientC) ? "不可用" : $"{d.AmbientC:0.0}℃" + (d.AmbientIsProxy ? "（代理）" : ""))}"
-            + $"   已记录 {HoursText(d.RecordedHours)}   样本 {d.SampleCount}"
-            + PendingFlushHint(d);
+            + $"   已落盘 {HoursText(d.RecordedHours)}   样本 {d.SampleCount}"
+            + PendingFlushHint(d, settings, pending);
         if (caliberLine.Length > 0) headerText += "\n" + caliberLine;
         _header.Text = headerText;
 
@@ -442,7 +456,7 @@ internal sealed class OverviewTab : ThemedTabPage
     /// 上一版把落盘 / 心跳提示都放页头，结果最需要解释的空态一条都看不见
     /// （2026-11-06 江珀实机反馈）。这里把关键事实直接写进空态副文案。
     /// </summary>
-    private string EmptyStatusLine(TodaySummaryData d, AppSettings settings)
+    private string EmptyStatusLine(TodaySummaryData d, AppSettings settings, PendingSliceInfo pending)
     {
         var interval = Math.Max(1, settings.Sampler.IntervalSeconds);
         var total = d.AcSamples + d.DcSamples;
@@ -452,8 +466,8 @@ internal sealed class OverviewTab : ThemedTabPage
         var power = _onAc ? "交流" : "电池";
         var otherPower = _onAc ? "电池" : "交流";
 
-        var line = $"今日已记录 {total} 个样本（约 {hours}）；当前显示{power} {cur} 片，{otherPower} {other} 片。\n";
-        var hint = PendingFlushHint(d).TrimStart();
+        var line = $"今日已落盘 {total} 个样本（约 {hours}）；当前显示{power} {cur} 片，{otherPower} {other} 片。\n";
+        var hint = PendingFlushHint(d, settings, pending).TrimStart();
         if (hint.Length > 0) line += hint + "\n";
         if (SamplerLog.LastPowerChange() is { } p) line += "最近供电切换：" + ShortPowerLine(p);
         return line.TrimEnd('\n');
@@ -493,17 +507,50 @@ internal sealed class OverviewTab : ThemedTabPage
     }
 
     /// <summary>
+    /// 读当前片的磁盘快照，统计尚未落盘的样本数。只读 slice-snapshot.json，
+    /// 不读内存样本、不画秒级曲线（R3）。快照由采样线程每 5 分钟原子替换，
+    /// 读失败或片起点不是当前片时按 0 处理（旧片残留不能算进正在采的片）。
+    /// </summary>
+    private static PendingSliceInfo PendingSliceSamples(int sliceMinutes)
+    {
+        try
+        {
+            var snapshot = SliceSnapshotStore.Load();
+            if (snapshot is null || snapshot.SliceMinutes != sliceMinutes) return default;
+
+            var start = SliceSnapshotStore.ParseStart(snapshot.SliceStart).LocalDateTime;
+            var now = DateTime.Now;
+            var currentStart = new DateTime(now.Year, now.Month, now.Day, now.Hour,
+                now.Minute - now.Minute % sliceMinutes, 0);
+            if (start != currentStart) return default;
+
+            var ac = 0;
+            var dc = 0;
+            foreach (var agg in snapshot.Aggregates)
+            {
+                if (agg.OnAcPower) ac += agg.Count;
+                else dc += agg.Count;
+            }
+            return new PendingSliceInfo(ac + dc, ac, dc, start);
+        }
+        catch
+        {
+            return default;
+        }
+    }
+
+    /// <summary>
     /// 页头提示：把"当前片还没落盘"与"采样已经停了"分开讲清楚。
     /// 采样停摆时旧实现仍写"将在 HH:MM 写入"，用户会一直等一批不会来的数据
     /// （2026-11-06 实机）。心跳由 SamplerService 提供，这里只读、不参与判断口径。
     /// </summary>
-    private string PendingFlushHint(TodaySummaryData d)
+    private string PendingFlushHint(TodaySummaryData d, AppSettings settings, PendingSliceInfo pending)
     {
         var stall = StallText();
         if (stall.Length > 0) return "   " + stall;
 
         int sliceMin;
-        try { sliceMin = Math.Clamp(SettingsStore.Load().Sampler.SliceMinutes, 5, 120); }
+        try { sliceMin = Math.Clamp(settings.Sampler.SliceMinutes, 5, 120); }
         catch { return ""; }
 
         var now = DateTime.Now;
@@ -513,14 +560,18 @@ internal sealed class OverviewTab : ThemedTabPage
         if (elapsed < 1) return "";
 
         var next = start.AddMinutes(sliceMin);
-        var hint = $"   最近 {elapsed} 分钟的样本将在 {next:HH:mm} 写入";
+        var hint = $"   当前片的样本将在 {next:HH:mm} 写入";
+        if (pending.TotalSamples > 0)
+            hint += $"；当前片已采样 {pending.TotalSamples} 个"
+                  + $"（交流 {pending.AcSamples} · 电池 {pending.DcSamples}，快照 {pending.Start:HH:mm}）";
         if (_onAc && d.HasDcData) hint += "；已有的电池数据请点上方『电池』查看";
         else if (!_onAc && d.HasAcData) hint += "；已有的交流数据请点上方『交流』查看";
         return hint;
     }
 
     /// <summary>
-    /// 窗口停在本页时按落盘节奏跟上新数据：只比较当日 CSV 的元数据，变化才重算。
+    /// 窗口停在本页时按落盘节奏跟上新数据：只比较当日 CSV 与当前片快照的元数据，变化才重算。
+    /// 快照是采样线程每 5 分钟原子替换的磁盘文件，空态的“当前片已采样 N 个”靠它跟上进度；
     /// 不读内存样本、不做秒级刷新（对应 R3 收窄后的口径）。
     /// </summary>
     private void OnFileWatchTick()
@@ -535,10 +586,22 @@ internal sealed class OverviewTab : ThemedTabPage
             var exists = info.Exists;
             var write = exists ? info.LastWriteTimeUtc : DateTime.MinValue;
             var len = exists ? info.Length : 0L;
-            if (exists == _lastFileExists && write == _lastFileWriteUtc && len == _lastFileLength) return;
+
+            var snap = new FileInfo(AppPaths.SliceSnapshotFile);
+            snap.Refresh();
+            var snapExists = snap.Exists;
+            var snapWrite = snapExists ? snap.LastWriteTimeUtc : DateTime.MinValue;
+            var snapLen = snapExists ? snap.Length : 0L;
+
+            if (exists == _lastFileExists && write == _lastFileWriteUtc && len == _lastFileLength
+                && snapExists == _lastSnapshotExists && snapWrite == _lastSnapshotWriteUtc
+                && snapLen == _lastSnapshotLength) return;
             _lastFileExists = exists;
             _lastFileWriteUtc = write;
             _lastFileLength = len;
+            _lastSnapshotExists = snapExists;
+            _lastSnapshotWriteUtc = snapWrite;
+            _lastSnapshotLength = snapLen;
             RefreshData();
         }
         catch
