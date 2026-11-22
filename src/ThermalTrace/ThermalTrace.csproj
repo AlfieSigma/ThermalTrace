@@ -38,7 +38,7 @@
       构建、发布与安装包脚本统一通过 scripts\version.ps1 读取这里，不再各写正则。
       四段映射与安装包版本比较规则见 docs\versioning.md。
     -->
-    <Version>0.3.7</Version>
+    <Version>0.3.8</Version>
     <Company>AlfieSigma</Company>
     <Authors>AlfieSigma</Authors>
     <Copyright>Copyright (c) 2026 AlfieSigma</Copyright>

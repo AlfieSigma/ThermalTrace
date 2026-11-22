@@ -67,4 +67,19 @@ public static class TrendThresholds
 
     /// <summary>月度外推的每月天数：与日历月无关，固定 30 天。</summary>
     public const double DaysPerMonth = 30.0;
+
+    /// <summary>空闲基线样本偏少门槛：低于此值标 LowSamples，与 CSV 的 low_n 同门槛。</summary>
+    public const int LowSampleThreshold = 30;
+
+    /// <summary>空闲基线日间跳变提示阈值（℃）：超过此值标 Jumpy，只提示噪声偏大。</summary>
+    public const double IdleBaselineJumpC = 3.0;
+
+    /// <summary>窗口内基线极差达到此值（℃）时，在可信度说明里提示日间噪声偏大。</summary>
+    public const double BaselineSpreadWarnC = 4.0;
+
+    /// <summary>自清灰首末段各取几天的加权均值，替代首末单日 ΔT。</summary>
+    public const int CleanEndpointDays = 3;
+
+    /// <summary>斜率显著性：|斜率| 小于该倍数 × 标准误时标为不显著。</summary>
+    public const double SlopeSeFactor = 1.5;
 }

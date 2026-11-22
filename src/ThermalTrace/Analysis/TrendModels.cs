@@ -71,6 +71,11 @@ public sealed class DailyTrend
     public double IdleBaseline { get; set; } = double.NaN;
     public string IdleBaselineBand { get; set; } = "";
     public bool IdleApproximated { get; set; }
+    /// <summary>基线样本总数；不足 LowSampleThreshold 时均值仍不稳。</summary>
+    public long IdleBaselineSamples { get; set; }
+    public bool IdleBaselineLowSamples { get; set; }
+    /// <summary>与前一日基线相差达到 IdleBaselineJumpC；只提示噪声偏大，不断言不可比。</summary>
+    public bool IdleBaselineJumpy { get; set; }
     public double AmbientMean { get; set; } = double.NaN;
     public Dictionary<int, CatDayStat> Ac { get; } = new();
     public Dictionary<int, CatDayStat> Dc { get; } = new();
@@ -130,10 +135,10 @@ public sealed record CategoryComparison(
 /// <summary>窗口内单个类别的累计量（AC / DC 合并，样本加权）。</summary>
 public sealed record CategoryUsage(int Category, long Samples, double Hours);
 
-/// <summary>最小二乘趋势斜率。</summary>
-public sealed record TrendSlope(double PerDay, int Points)
+/// <summary>最小二乘趋势斜率。Significant 为假时不参与页脚、HTML 与解读证据。</summary>
+public sealed record TrendSlope(double PerDay, int Points, bool Significant = true)
 {
-    public bool HasTrend => Points >= 3;
+    public bool HasTrend => Points >= 3 && Significant;
 }
 
 /// <summary>

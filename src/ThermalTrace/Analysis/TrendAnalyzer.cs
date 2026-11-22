@@ -44,10 +44,13 @@ public static class TrendAnalyzer
         {
             var dayRows = g.ToList();
             var day = new DailyTrend { Date = g.Key };
-            var (baseline, approximated, baselineBand) = Aggregator.DailyIdleBaseline(dayRows, g.Key);
+            var (baseline, approximated, baselineBand, baselineSamples, lowSamples) =
+                Aggregator.DailyIdleBaseline(dayRows, g.Key);
             day.IdleBaseline = baseline;
             day.IdleBaselineBand = baselineBand;
             day.IdleApproximated = approximated;
+            day.IdleBaselineSamples = baselineSamples;
+            day.IdleBaselineLowSamples = lowSamples;
 
             var ambientVals = dayRows.Select(r => AmbientLookup.At(r.SliceStart))
                 .Where(v => !double.IsNaN(v)).Distinct().ToList();
@@ -70,6 +73,17 @@ public static class TrendAnalyzer
             foreach (var s in day.Ac.Values) s.Finalize(day.IdleBaseline, interval);
             foreach (var s in day.Dc.Values) s.Finalize(day.IdleBaseline, interval);
             days.Add(day);
+        }
+
+        // 基线日间跳变：寒潮等真实室温变化也会命中，只作噪声提示，不断言该日不可比。
+        double? previousBaseline = null;
+        foreach (var day in days)
+        {
+            if (previousBaseline is { } prev
+                && !double.IsNaN(day.IdleBaseline)
+                && Math.Abs(day.IdleBaseline - prev) >= TrendThresholds.IdleBaselineJumpC)
+                day.IdleBaselineJumpy = true;
+            if (!double.IsNaN(day.IdleBaseline)) previousBaseline = day.IdleBaseline;
         }
 
         var report = new TrendReport
@@ -339,7 +353,18 @@ public static class TrendAnalyzer
             double num = pts.Sum(p => (p.X - mx) * (p.Y - my));
             double den = pts.Sum(p => (p.X - mx) * (p.X - mx));
             if (den > 0)
-                report.Slopes[cat] = new TrendSlope(num / den, pts.Count);
+            {
+                var slope = num / den;
+                // 残差标准误：噪声大于斜率时不出趋势证据，避免基线抖动被读成缓慢升温。
+                double sse = pts.Sum(p =>
+                {
+                    var residual = p.Y - (my + slope * (p.X - mx));
+                    return residual * residual;
+                });
+                double se = Math.Sqrt(sse / (pts.Count - 2) / den);
+                bool significant = se <= 0 || Math.Abs(slope) >= TrendThresholds.SlopeSeFactor * se;
+                report.Slopes[cat] = new TrendSlope(slope, pts.Count, significant);
+            }
         }
     }
 

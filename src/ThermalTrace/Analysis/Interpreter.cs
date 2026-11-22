@@ -96,7 +96,7 @@ public static class Interpreter
 
         var suggestions = BuildSuggestions(report, primary, health, insufficient);
 
-        var note = BuildConfidenceNote(report, comparable);
+        var note = BuildConfidenceNote(report, comparable, win);
 
         // 清灰行文案：把"不渲染 / 不能评估 / 有结论"三种情况说清楚。
         // 数据不足时若直接写"未设置"，等于把"这次不展示"说成了"用户没填"——
@@ -180,7 +180,7 @@ public static class Interpreter
         var attributions = BuildSingleWindowAttributions(primary, days.Count, rise, over85Hours, peak);
         var suggestions = BuildSingleWindowSuggestions(rise, over85Hours, peak);
         var cleanStat = BuildSingleWindowClean(primary, clean, lastDay, peak);
-        var note = BuildSingleWindowNote(report, coverageDays, days.Count, primary);
+        var note = BuildSingleWindowNote(report, coverageDays, days.Count, primary, clean, lastDay);
         var cleanDigestLine = $"- 清灰基准：{cleanStat.Text}";
         var digest = BuildSingleWindowDigest(report, win, clean, lastDay, coverageDays, days.Count,
             health, evidence, attributions, cleanDigestLine, note);
@@ -203,7 +203,8 @@ public static class Interpreter
 
     /// <summary>
     /// 单窗口内的单个负载档汇总。ΔT / 均温 / 超温占比按样本数加权；
-    /// 前后数值取"清灰后第一个有该档数据的日子"与"最近一个有数据的日子"。
+    /// 首末 ΔT 取首 CleanEndpointDays 日与末 CleanEndpointDays 日的加权均值，
+    /// 不再用单日点，避免日间噪声被当成清灰前后的变化。
     /// </summary>
     private sealed class BandWindowStat
     {
@@ -218,6 +219,7 @@ public static class Interpreter
         public DateOnly? LastDate { get; private set; }
         public double LastDeltaT { get; private set; } = double.NaN;
 
+        private readonly List<(DateOnly Date, double DeltaT, long Samples)> _deltas = new();
         private double _tempW, _tempN, _overW, _overN;
 
         public double TempMean => _tempN > 0 ? _tempW / _tempN : double.NaN;
@@ -235,13 +237,9 @@ public static class Interpreter
 
             if (!double.IsNaN(s.DeltaT))
             {
-                if (FirstDate is null)
-                {
-                    FirstDate = date;
-                    FirstDeltaT = s.DeltaT;
-                }
+                _deltas.Add((date, s.DeltaT, Math.Max(1L, s.Samples)));
+                FirstDate ??= date;
                 LastDate = date;
-                LastDeltaT = s.DeltaT;
             }
 
             if (!double.IsNaN(s.TempMean)) { _tempW += s.TempMean * n; _tempN += n; }
@@ -252,6 +250,26 @@ public static class Interpreter
                 TempMax = s.TempMax;
                 PeakDate = date;
             }
+        }
+
+        /// <summary>首末各取 CleanEndpointDays 日的加权均值；不足窗口时退化为已有的那几天。</summary>
+        public void Complete()
+        {
+            if (_deltas.Count == 0) return;
+            FirstDeltaT = WindowMean(0, Math.Min(CleanEndpointDays, _deltas.Count));
+            LastDeltaT = WindowMean(Math.Max(0, _deltas.Count - CleanEndpointDays), _deltas.Count);
+        }
+
+        private double WindowMean(int from, int to)
+        {
+            long n = 0;
+            double weighted = 0;
+            for (int i = from; i < to; i++)
+            {
+                n += _deltas[i].Samples;
+                weighted += _deltas[i].DeltaT * _deltas[i].Samples;
+            }
+            return n > 0 ? weighted / n : double.NaN;
         }
     }
 
@@ -273,7 +291,7 @@ public static class Interpreter
                 any = true;
                 band.Add(day.Date, stat);
             }
-            if (any) result.Add(band);
+            if (any) { band.Complete(); result.Add(band); }
         }
 
         return result;
@@ -319,7 +337,7 @@ public static class Interpreter
         var weak = daysWithData < MinDaysForWeakConclusion
             ? $"样本仅 {daysWithData} 天，结论偏弱，仅供参考。"
             : "";
-        var span = $"{daysWithData} 天（覆盖 {coverageDays} 天）";
+        var span = $"{daysWithData} 天（覆盖 {coverageDays} 天，首末各 {CleanEndpointDays} 日均值）";
         var first = T(primary.FirstDate is null ? (double?)null : primary.FirstDeltaT, "0.0");
         var last = T(primary.LastDate is null ? (double?)null : primary.LastDeltaT, "0.0");
         var change = double.IsNaN(rise) ? "—" : Signed(rise, "0.0", "℃");
@@ -327,7 +345,7 @@ public static class Interpreter
         if (health is HealthLevel.Warning or HealthLevel.Watch)
         {
             if (rise >= DeltaTSignificant)
-                return weak + $"自上次清灰以来 {span}，「{primary.Name}」ΔT 由首日 {first}℃ 升至最近 {last}℃"
+                return weak + $"自上次清灰以来 {span}，「{primary.Name}」ΔT 首段 {first}℃ → 末段 {last}℃"
                     + $"（{change}），需留意散热回升。";
             if (over85Hours >= Over85WatchHours)
                 return weak + $"自上次清灰以来 {span}，超 85℃ 累计 {over85Hours:0.0}h，"
@@ -337,13 +355,13 @@ public static class Interpreter
         }
 
         if (health == HealthLevel.Good)
-            return weak + $"自上次清灰以来 {span}，「{primary.Name}」ΔT 由首日 {first}℃ 降至最近 {last}℃"
+            return weak + $"自上次清灰以来 {span}，「{primary.Name}」ΔT 首段 {first}℃ → 末段 {last}℃"
                 + $"（{change}），清灰后散热改善。";
 
         if (double.IsNaN(rise))
             return weak + $"自上次清灰以来 {span}，主类别 ΔT 数据不足，暂按现有记录给出整体判断。";
 
-        return weak + $"自上次清灰以来 {span}，「{primary.Name}」ΔT 首日 {first}℃、最近 {last}℃"
+        return weak + $"自上次清灰以来 {span}，「{primary.Name}」ΔT 首段 {first}℃、末段 {last}℃"
             + $"（{change}），整体平稳。";
     }
 
@@ -369,8 +387,8 @@ public static class Interpreter
                 : Signed(b.LastDeltaT - b.FirstDeltaT, "0.0", "℃");
             var hours = b.Hours > 0 ? $"{b.Hours:0.0}h" : "—";
             items.Add(new EvidenceItem(b.Name, "档位", "",
-                $"ΔT {first} → {last}（{change}）；均温 {T(b.TempMean, "0.0")}℃；"
-                + $"时长 {hours}；超 85℃ {T(b.Over85Pct, "0.0")}%"));
+                $"ΔT 首段 {first} → 末段 {last}（{change}，各 {CleanEndpointDays} 日均值）；"
+                + $"均温 {T(b.TempMean, "0.0")}℃；时长 {hours}；超 85℃ {T(b.Over85Pct, "0.0")}%"));
         }
 
         if (over85Hours > 0)
@@ -390,8 +408,8 @@ public static class Interpreter
     {
         var items = new List<AttributionItem>();
         var pair = primary.FirstDate is not null && primary.LastDate is not null
-            ? $"「{primary.Name}」ΔT 首日 {primary.FirstDeltaT:0.0}℃ → 最近 {primary.LastDeltaT:0.0}℃"
-              + $"（{Signed(primary.LastDeltaT - primary.FirstDeltaT, "0.0", "℃")}）"
+            ? $"「{primary.Name}」ΔT 首段 {primary.FirstDeltaT:0.0}℃ → 末段 {primary.LastDeltaT:0.0}℃"
+              + $"（{Signed(primary.LastDeltaT - primary.FirstDeltaT, "0.0", "℃")}，各 {CleanEndpointDays} 日均值）"
             : null;
 
         if (pair is not null && rise >= CleanRiseSlight)
@@ -477,7 +495,8 @@ public static class Interpreter
     }
 
     private static string BuildSingleWindowNote(
-        TrendReport report, int coverageDays, int daysWithData, BandWindowStat primary)
+        TrendReport report, int coverageDays, int daysWithData, BandWindowStat primary,
+        DateOnly clean, DateOnly last)
     {
         var parts = new List<string>
         {
@@ -489,6 +508,14 @@ public static class Interpreter
                 ? "口径：检测到变更记录，跨口径数值需谨慎"
                 : "口径：无变更"
         };
+        var approx = report.Days.Count(d => d.Date >= clean && d.Date <= last && d.IdleApproximated);
+        if (approx > 0) parts.Add($"空闲基线近似 {approx} 天（ΔT 口径略宽）");
+        var low = report.Days.Count(d => d.Date >= clean && d.Date <= last && d.IdleBaselineLowSamples);
+        if (low > 0) parts.Add($"空闲基线样本偏少 {low} 天");
+        var jumpy = report.Days.Count(d => d.Date >= clean && d.Date <= last && d.IdleBaselineJumpy);
+        if (jumpy > 0) parts.Add($"基线日间跳变 {jumpy} 天");
+        var spreadText = BaselineSpreadText(BaselineSpread(report, clean, last));
+        if (spreadText.Length > 0) parts.Add(spreadText);
         return string.Join("；", parts) + "。";
     }
 
@@ -506,7 +533,7 @@ public static class Interpreter
         sb.AppendLine($"- 数据范围：{RangeText(report)}（{report.DaysWithData} 个有效天数）");
         sb.AppendLine($"- 解读窗口：{win.Label}（{clean:yyyy-MM-dd} ~ {last:yyyy-MM-dd}，"
             + $"覆盖 {coverageDays} 天，有数据 {daysWithData} 天）");
-        sb.AppendLine("- 口径说明：ΔT = 该负载类别均温 − 当天空闲档最低温（已消室温影响）；K/W = 均温 ÷ 平均功耗");
+        sb.AppendLine("- 口径说明：ΔT = 该负载类别均温 − 当天空闲档加权均温（已消室温影响）；K/W = 均温 ÷ 平均功耗");
         sb.AppendLine($"- 健康度：{health.Text()}");
         sb.AppendLine("- 证据：");
         foreach (var e in evidence) sb.AppendLine($"  - {e.Text}");
@@ -930,7 +957,8 @@ public static class Interpreter
     // 可信度说明（§5.1：数据天数 / 可比类别 / 口径 / 基线近似）
     // ------------------------------------------------------------------
 
-    private static string BuildConfidenceNote(TrendReport report, List<CategoryComparison> comparable)
+    private static string BuildConfidenceNote(
+        TrendReport report, List<CategoryComparison> comparable, TrendWindow win)
     {
         var parts = new List<string>
         {
@@ -944,9 +972,43 @@ public static class Interpreter
 
         var approx = report.Days.Count(d => d.IdleApproximated);
         if (approx > 0) parts.Add($"空闲基线近似 {approx} 天（ΔT 口径略宽）");
+        var low = report.Days.Count(d => d.IdleBaselineLowSamples);
+        if (low > 0) parts.Add($"空闲基线样本偏少 {low} 天");
+        var jumpy = report.Days.Count(d => d.IdleBaselineJumpy);
+        if (jumpy > 0) parts.Add($"基线日间跳变 {jumpy} 天");
+
+        if (report.FirstDay is { } first && report.LastDay is { } last)
+        {
+            var (curFrom, curTo, _, _) = win.Resolve(first, last);
+            var spreadText = BaselineSpreadText(BaselineSpread(report, curFrom, curTo));
+            if (spreadText.Length > 0) parts.Add(spreadText);
+        }
 
         return string.Join("；", parts) + "。";
     }
+
+    /// <summary>窗口内空闲基线的极差；不足两天为 NaN。</summary>
+    private static double BaselineSpread(TrendReport report, DateOnly from, DateOnly to)
+    {
+        double lo = double.MaxValue, hi = double.MinValue;
+        int count = 0;
+        foreach (var d in report.Days)
+        {
+            if (d.Date < from || d.Date > to || double.IsNaN(d.IdleBaseline)) continue;
+            lo = Math.Min(lo, d.IdleBaseline);
+            hi = Math.Max(hi, d.IdleBaseline);
+            count++;
+        }
+        return count >= 2 ? hi - lo : double.NaN;
+    }
+
+    /// <summary>基线波动文案；超过阈值时提示以窗口对比为准。</summary>
+    private static string BaselineSpreadText(double spread) =>
+        double.IsNaN(spread)
+            ? ""
+            : spread >= BaselineSpreadWarnC
+                ? $"基线波动 {spread:0.0}℃（日间点噪声偏大，以窗口对比为准）"
+                : $"基线波动 {spread:0.0}℃";
 
     // ------------------------------------------------------------------
     // 清灰基准层（§5.6）
@@ -1051,7 +1113,7 @@ public static class Interpreter
         sb.AppendLine("## ThermalTrace 趋势数据摘要（供 AI 解读）");
         sb.AppendLine($"- 数据范围：{RangeText(report)}（{report.DaysWithData} 个有效天数）");
         sb.AppendLine($"- 对比窗口：{win.Label}（{WindowRanges(report, win)}）");
-        sb.AppendLine("- 口径说明：ΔT = 该负载类别均温 − 当天空闲档最低温（已消室温影响）；K/W = 均温 ÷ 平均功耗");
+        sb.AppendLine("- 口径说明：ΔT = 该负载类别均温 − 当天空闲档加权均温（已消室温影响）；K/W = 均温 ÷ 平均功耗");
         sb.AppendLine($"- 环境气温：本期 {T(curAmb, "0.0")}℃ / 上期 {T(prevAmb, "0.0")}℃");
         sb.AppendLine($"- 健康度：{health.Text()}");
         sb.AppendLine("- 证据：");

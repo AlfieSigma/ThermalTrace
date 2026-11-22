@@ -203,7 +203,9 @@ internal static class Commands
         ConsoleHost.WriteLine(d.SsdText);
 
         if (d.IdleApproximated)
-            ConsoleHost.WriteLine($"注：今日无 0-10% 空闲档数据，ΔT 基线用「{d.IdleBaselineBand}」档近似。");
+            ConsoleHost.WriteLine($"注：今日无 0-10% 空闲档数据，ΔT 基线用「{d.IdleBaselineBand}」档加权均温近似。");
+        if (d.IdleBaselineLowSamples && !double.IsNaN(d.IdleBaseline))
+            ConsoleHost.WriteLine($"注：今日空闲档样本 {d.IdleBaselineSamples}，基线可信度低。");
     }
 
     private static string Num(double v) =>

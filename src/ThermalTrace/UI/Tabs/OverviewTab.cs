@@ -435,9 +435,11 @@ internal sealed class OverviewTab : ThemedTabPage
 
         // 空闲基线被近似时必须说清楚，否则 ΔT 的口径会被误读（与 HTML 报告同一句话）
         var note = d.IdleApproximated && !double.IsNaN(d.IdleBaseline)
-            ? $"注：今日无 0-10% 空闲档数据，ΔT 基线用「{d.IdleBaselineBand}」档最低温 "
+            ? $"注：今日无 0-10% 空闲档数据，ΔT 基线用「{d.IdleBaselineBand}」档加权均温 "
               + $"{d.IdleBaseline:0.0}℃ 近似（与 HTML 报告口径一致）"
-            : "";
+            : d.IdleBaselineLowSamples && !double.IsNaN(d.IdleBaseline)
+                ? $"注：今日空闲档样本 {d.IdleBaselineSamples}，基线 {d.IdleBaseline:0.0}℃ 可信度低。"
+                : "";
         _note.Text = note;
         _body.RowStyles[3] = new RowStyle(SizeType.Absolute, note.Length > 0 ? 22f : 0f);
     }

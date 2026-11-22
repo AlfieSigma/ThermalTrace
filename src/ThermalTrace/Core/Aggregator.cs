@@ -216,30 +216,47 @@ internal sealed class Aggregator
     /// 某天的空闲基线 —— 用作环境温度代理（空闲时 CPU 温度趋近环境温度）。
     /// 趋势分析用它做 ΔT 归一化，抵消季节与室温变化。
     ///
+    /// 【口径】取 0-10 档的加权均温，不取最低温极值：最低温是当天冷端极值，
+    /// 受开机时刻与空闲样本数影响，日间能跳 8℃ 以上，会让全部档位的 ΔT 同步反向跳。
     /// 【兜底】当天没有 0-10 档数据时（真实使用中单核峰值可能长期高于 10%），
-    /// 退而取当天出现的最低档最低温，并标记 Approximated——
-    /// 报告需明确提示该日 ΔT 为近似口径。
+    /// 退而取当天出现的最低档的加权均温，并标记 Approximated。
+    /// 【质量】Samples 是基线样本总数，低于 LowSampleThreshold 时 LowSamples 为真，
+    /// 供展示层标出低可信日，不直接剔除该日。
     /// </summary>
-    public static (double Baseline, bool Approximated, string Band) DailyIdleBaseline(
-        IEnumerable<SliceRow> rows, DateOnly day)
+    public static (double Baseline, bool Approximated, string Band, long Samples, bool LowSamples)
+        DailyIdleBaseline(IEnumerable<SliceRow> rows, DateOnly day)
     {
         var list = rows as IReadOnlyList<SliceRow> ?? rows.ToList();
 
-        var idleMin = list
+        var idle = list
             .Where(r => r.Date == day
                         && r.BandKey == LoadBand.B00_10.Key()
-                        && !double.IsNaN(r.TempMin))
-            .Select(r => r.TempMin)
+                        && !double.IsNaN(r.TempMean))
             .ToList();
-        if (idleMin.Count > 0)
-            return (idleMin.Min(), false, LoadBand.B00_10.Key());
+        if (idle.Count > 0)
+            return Summarize(idle, LoadBand.B00_10.Key(), false);
 
         var lowest = list
-            .Where(r => r.Date == day && !double.IsNaN(r.TempMin))
+            .Where(r => r.Date == day && !double.IsNaN(r.TempMean))
             .GroupBy(r => r.BandKey)
             .OrderBy(g => g.Key, StringComparer.Ordinal)
             .FirstOrDefault();
-        if (lowest is null) return (double.NaN, false, "");
-        return (lowest.Select(r => r.TempMin).Min(), true, lowest.Key);
+        if (lowest is null) return (double.NaN, false, "", 0, false);
+        return Summarize(lowest.ToList(), lowest.Key, true);
+    }
+
+    private static (double Baseline, bool Approximated, string Band, long Samples, bool LowSamples)
+        Summarize(List<SliceRow> rows, string band, bool approximated)
+    {
+        long samples = 0;
+        double weighted = 0;
+        foreach (var r in rows)
+        {
+            var n = Math.Max(1, r.SampleCount);
+            samples += n;
+            weighted += r.TempMean * n;
+        }
+        var mean = samples > 0 ? weighted / samples : double.NaN;
+        return (mean, approximated, band, samples, samples < TrendThresholds.LowSampleThreshold);
     }
 }

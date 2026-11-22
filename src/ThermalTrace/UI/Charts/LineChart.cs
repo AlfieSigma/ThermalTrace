@@ -30,7 +30,8 @@ internal sealed record ChartSeries(
     bool RightAxis = false,
     bool ForceZero = true,
     DashStyle LineStyle = DashStyle.Solid,
-    IReadOnlySet<DateOnly>? Marked = null);
+    IReadOnlySet<DateOnly>? Marked = null,
+    string MarkedLabel = "近似");
 
 /// <summary>
 /// 两个图表共用的刻度计算。
@@ -508,7 +509,7 @@ internal sealed class LineChart : BufferedPanel
             if (double.IsNaN(v)) continue;
             var ser = _series[si];
             var text = (ser.ShowSign ? ChartMath.Signed(v) : ChartMath.Val(v)) + ser.Unit;
-            var name = _marked[si][_hover] ? ser.Name + "（近似）" : ser.Name;
+            var name = _marked[si][_hover] ? ser.Name + "（" + ser.MarkedLabel + "）" : ser.Name;
             rows.Add((ser.Color, name, text));
         }
         if (rows.Count == 0) rows.Add((p.TextDim, "该日无数据", "—"));

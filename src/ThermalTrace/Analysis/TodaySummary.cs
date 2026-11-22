@@ -63,11 +63,13 @@ internal sealed record TodaySummaryData(
     bool OnAc,
     bool HasAnyData,
     double AmbientC,
-    // 气温是"空闲档最低温 + 5℃"的代理值，而不是实测 / 在线值（G4.1）。
+    // 气温是"空闲档基线 + 5℃"的代理值，而不是实测 / 在线值（G4.1）。
     bool AmbientIsProxy,
     double IdleBaseline,
     bool IdleApproximated,
     string IdleBaselineBand,
+    long IdleBaselineSamples,
+    bool IdleBaselineLowSamples,
     long SampleCount,
     int SliceCount,
     double RecordedHours,
@@ -175,10 +177,11 @@ internal static class TodaySummary
     {
         var rows = DailyStore.ReadRange(day, day).Where(r => r.Date == day).ToList();
 
-        var (baseline, approximated, baselineBand) = Aggregator.DailyIdleBaseline(rows, day);
+        var (baseline, approximated, baselineBand, baselineSamples, lowSamples) =
+            Aggregator.DailyIdleBaseline(rows, day);
         var interval = Math.Max(1, settings.Sampler.IntervalSeconds);
 
-        // 联网气温缺失时，按设计降级链回退到"空闲档最低温 +5℃"代理，而非直接留空。
+        // 联网气温缺失时，按设计降级链回退到"空闲档基线 +5℃"代理，而非直接留空。
         // 该代理只用于表头展示，不影响 ΔT（ΔT 直接用 baseline 计算）。
         // 当连基线也缺失（当天完全无数据）时仍保持 NaN → 表头显示"不可用"。
         var rawAmbient = AmbientLookup.At(DateTimeOffset.Now);
@@ -282,6 +285,8 @@ internal static class TodaySummary
             IdleBaseline: baseline,
             IdleApproximated: approximated,
             IdleBaselineBand: baselineBand,
+            IdleBaselineSamples: baselineSamples,
+            IdleBaselineLowSamples: lowSamples,
             SampleCount: stats.Values.Sum(s => s.Samples),
             SliceCount: sliceStarts.Count,
             RecordedHours: stats.Values.Sum(s => s.HoursActive),

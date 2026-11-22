@@ -12,12 +12,12 @@ Windows 10/11，点下面的文件名直接下载：
 
 | 安装包 | 说明 |
 |---|---|
-| **[ThermalTrace-0.3.7-Setup.exe](https://github.com/AlfieSigma/ThermalTrace/releases/download/v0.3.7/ThermalTrace-0.3.7-Setup.exe)**（普通版，主推） | 不含墨水屏推送。没有极趣 Note4 就下这个。 |
-| **[ThermalTrace-0.3.7-Zectrix-Setup.exe](https://github.com/AlfieSigma/ThermalTrace/releases/download/v0.3.7/ThermalTrace-0.3.7-Zectrix-Setup.exe)**（极趣推送版） | 含极趣 Note4 墨水屏推送。需要极趣 Note4 与自己的极趣 API Key、设备 MAC。 |
+| **[ThermalTrace-0.3.8-Setup.exe](https://github.com/AlfieSigma/ThermalTrace/releases/download/v0.3.8/ThermalTrace-0.3.8-Setup.exe)**（普通版，主推） | 不含墨水屏推送。没有极趣 Note4 就下这个。 |
+| **[ThermalTrace-0.3.8-Zectrix-Setup.exe](https://github.com/AlfieSigma/ThermalTrace/releases/download/v0.3.8/ThermalTrace-0.3.8-Zectrix-Setup.exe)**（极趣推送版） | 含极趣 Note4 墨水屏推送。需要极趣 Note4 与自己的极趣 API Key、设备 MAC。 |
 
-两个文件也都在 [v0.3.7 Release](https://github.com/AlfieSigma/ThermalTrace/releases/tag/v0.3.7) 页面。
+两个文件也都在 [v0.3.8 Release](https://github.com/AlfieSigma/ThermalTrace/releases/tag/v0.3.8) 页面。
 
-> GitHub 页面上的“Source code (zip / tar.gz)”是源码压缩包，不是安装程序，双击没有安装向导。要从源码自行编译，见 [BUILD.md](BUILD.md)。
+> GitHub 页面上的“Source code (zip / tar.gz)”是源码压缩包，不是安装程序，双击没有安装向导。要从源码自行编译，见 [docs/build.md](docs/build.md)。
 
 ## 两个版本
 
@@ -51,7 +51,7 @@ ThermalTrace 对应的做法是：
 
 - 只比较**同一台机器、同一套传感器绑定**的纵向变化，不与其他机器的数字横向比较。
 - 每个时间片按**单核峰值利用率**分档，只在同一档内比较。默认合并为空闲、轻度、中等、重度、满载五类，边界可以在设置页调整。
-- 主指标是 **ΔT（温升）= 该档加权平均温度 − 当天空闲档最低温**，不是绝对温度。
+- 主指标是 **ΔT（温升）= 该档加权平均温度 − 当天空闲档加权均温**，不是绝对温度。基线取 0–10% 档的加权均温，不取最低温极值；样本偏少或日间跳变的日期会在图上标出。
 - 默认每 **30 分钟**一个时间片，聚合均值、P95 和最大值，并按样本数加权。时间片长度可在 `settings.json` 的 `sampler.sliceMinutes` 中调整为 5–120 分钟。
 
 ## 它不做什么
@@ -118,7 +118,7 @@ ThermalTrace 对应的做法是：
 
 按天查看历史变化，有三个视图：
 
-- **折线**：各负载档的 ΔT 走势，同时叠加当天空闲基线和环境气温。
+- **折线**：各负载档的 ΔT 走势，同时叠加当天空闲基线和环境气温；基线质量存疑的日期用空心点标出，页脚给出基线波动提示。
 - **柱状**：当前范围与上一个同期范围对比，直接看变化幅度。
 - **硬件**：GPU 的当日均温与使用时长，SSD 的累计写入与剩余寿命。
 
@@ -209,7 +209,7 @@ ThermalTrace 对应的做法是：
 
 **休眠一晚，今日概览没有数据是不是坏了？**
 
-休眠期间本来就不该有数据，没有数据是对的：程序不采样、不补录、不伪造。醒来后还要等下一个 30 分钟片结束才落盘，短时间空白也属正常；停机前那一片会在醒来第一拍补写到前一天的 CSV，不是当天没记录。0.3.6 起程序处理的是唤醒后本应恢复的采样：会重建硬件监控、重置心跳并刷新页面，采样循环连续异常也会自动重建；若清醒时段仍持续没有任何数据，可看 `logs\sampler.txt` 的 `resume:` / `error:` / `recover:` 行，维护命令 `--simulate-resume` 可以不休眠复核恢复链路。
+休眠期间本来就不该有数据，没有数据是对的：程序不采样、不补录、不伪造。醒来后还要等下一个 30 分钟片结束才落盘，短时间空白也属正常；停机前那一片会在醒来第一拍补写到前一天的 CSV，不是当天没记录。0.3.6 起程序处理的是唤醒后本应恢复的采样：会重建硬件监控、重置心跳并刷新页面，采样循环连续异常也会自动重建；若清醒时段仍持续没有任何数据，按[排查文档](docs/troubleshooting.md)看 `logs\sampler.txt` 的 `resume:` / `error:` / `recover:` 行，维护命令 `--simulate-resume` 可以不休眠复核恢复链路。
 
 **设置里显示已开启开机自启，但任务管理器里看不到？**
 

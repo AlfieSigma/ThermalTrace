@@ -103,11 +103,15 @@ public static class HtmlTrendReport
         sb.AppendLine($"<div class=\"card\"><h2>ΔT 归一化温升（℃，同等负载下的相对发热，{(r.OnAc ? "交流" : "电池")}供电）</h2>");
         sb.AppendLine(Legend(cats, settings));
         sb.AppendLine(LineChart(slots, cats, s => s.DeltaT, "℃", false, r.OnAc));
-        sb.AppendLine("<div class=\"note\">ΔT = 该负载类别均温 − 当日空闲档最低温，消除夏冬室温差异后跨期可比。");
+        sb.AppendLine("<div class=\"note\">ΔT = 该负载类别均温 − 当天空闲档加权均温，消除夏冬室温差异后跨期可比。");
         var approxDays = r.Days.Where(d => d.IdleApproximated).ToList();
         if (approxDays.Count > 0)
             sb.AppendLine("<br>⚠ 以下日期无 0-10 空闲档数据，基线用当日最低档（"
-                + string.Join("、", approxDays.Select(d => $"{d.Date:MM-dd} 用 {d.IdleBaselineBand}")) + "）近似，ΔT 口径略宽。");
+                + string.Join("、", approxDays.Select(d => $"{d.Date:MM-dd} 用 {d.IdleBaselineBand}")) + "）加权均温近似，ΔT 口径略宽。");
+        var lowDays = r.Days.Count(d => d.IdleBaselineLowSamples);
+        var jumpyDays = r.Days.Count(d => d.IdleBaselineJumpy);
+        if (lowDays > 0 || jumpyDays > 0)
+            sb.AppendLine($"<br>空闲档样本偏少 {lowDays} 天、基线日间跳变 {jumpyDays} 天，这些日点的 ΔT 噪声偏大，以窗口对比为准。");
         sb.AppendLine("</div></div>");
 
         sb.AppendLine("<div class=\"card\"><h2>每日超 85℃ 时长（小时）</h2>");

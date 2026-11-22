@@ -412,8 +412,8 @@ internal sealed class TrendTab : ThemedTabPage
 
         // ---- 空闲基线 + 环境气温（§2-2 / §2-3，仅折线视图）----
         // 两条都是绝对温度，放右轴；ΔT 留左轴。缺失日写 NaN，线自然断开，不补 0。
-        // 基线为近似值的日期用空心点标出，与实测点区分。
-        var approx = new HashSet<DateOnly>();
+        // 基线质量存疑的日期用空心点标出：近似 / 样本偏少 / 日间跳变。
+        var marked = new HashSet<DateOnly>();
         var baselinePts = new List<ChartPoint>(axis.Count);
         var ambientPts = new List<ChartPoint>(axis.Count);
         bool anyBaseline = false, anyAmbient = false;
@@ -422,7 +422,10 @@ internal sealed class TrendTab : ThemedTabPage
             var d = slot.Day;
             if (d is not null && !double.IsNaN(d.IdleBaseline)) anyBaseline = true;
             if (d is not null && !double.IsNaN(d.AmbientMean)) anyAmbient = true;
-            if (d?.IdleApproximated == true) approx.Add(slot.Date);
+            if (d is { IdleApproximated: true }
+                || d is { IdleBaselineLowSamples: true }
+                || d is { IdleBaselineJumpy: true })
+                marked.Add(slot.Date);
             baselinePts.Add(new ChartPoint(slot.Date, d?.IdleBaseline ?? double.NaN));
             ambientPts.Add(new ChartPoint(slot.Date, d?.AmbientMean ?? double.NaN));
         }
@@ -430,7 +433,7 @@ internal sealed class TrendTab : ThemedTabPage
         var p = Theme.Current;
         if (anyBaseline)
             series.Add(new ChartSeries("空闲基线", p.TextDim, baselinePts,
-                "℃", false, true, false, DashStyle.Dash, approx));
+                "℃", false, true, false, DashStyle.Dash, marked, "低可信"));
         if (anyAmbient)
             series.Add(new ChartSeries("环境气温", p.Accent, ambientPts,
                 "℃", false, true, false, DashStyle.Dash));
@@ -544,14 +547,24 @@ internal sealed class TrendTab : ThemedTabPage
         var ambient = days.Where(d => !double.IsNaN(d.AmbientMean)).Select(d => d.AmbientMean).ToList();
         var baseline = days.Where(d => !double.IsNaN(d.IdleBaseline)).Select(d => d.IdleBaseline).ToList();
         int approx = days.Count(d => d.IdleApproximated && !double.IsNaN(d.IdleBaseline));
+        int low = days.Count(d => d.IdleBaselineLowSamples && !double.IsNaN(d.IdleBaseline));
+        int jumpy = days.Count(d => d.IdleBaselineJumpy && !double.IsNaN(d.IdleBaseline));
 
         var a = ambient.Count == 0
             ? "环温 无数据"
             : $"环温 {ambient.Average():0.0}℃（{ambient.Count}/{days.Count} 天）";
-        var b = baseline.Count == 0
-            ? "基线 无数据"
-            : $"基线 {baseline.Average():0.0}℃" + (approx > 0 ? $"（{approx} 天近似）" : "");
-        return $"右轴：{a} · {b}";
+        var b = baseline.Count == 0 ? "基线 无数据" : $"基线 {baseline.Average():0.0}℃";
+        var quality = new List<string>();
+        if (approx > 0) quality.Add($"近似 {approx} 天");
+        if (low > 0) quality.Add($"样本偏少 {low} 天");
+        if (jumpy > 0) quality.Add($"跳变 {jumpy} 天");
+        var q = quality.Count > 0 ? $"（{string.Join("，", quality)}）" : "";
+        var spread = baseline.Count >= 2 ? baseline.Max() - baseline.Min() : double.NaN;
+        var noise = !double.IsNaN(spread)
+            && spread >= ThermalTrace.Model.TrendThresholds.BaselineSpreadWarnC
+                ? $" · 基线波动 {spread:0.0}℃，日间点噪声偏大，以窗口对比为准"
+                : "";
+        return $"右轴：{a} · {b}{q}{noise}";
     }
 
     private void RenderBar(AppSettings settings, TrendReport report)
